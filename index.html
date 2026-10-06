@@ -335,7 +335,7 @@ body:not(.is-raid) .raidonly{ display:none; }
     <div id="charge"><b id="chargeFill"></b></div>
     <div id="msg"></div>
     <div id="lockTip" hidden>
-      <p>마우스 고정 없이 조작 중입니다. 마우스를 움직이면 시점이 돌고, 커서를 화면 가장자리에 대면 계속 돕니다. 방향키로도 돌릴 수 있습니다.</p>
+      <p>이 환경에 맞춘 마우스 조작입니다. 마우스를 움직이면 시점이 돌고, 화면 끝까지 밀면 그 방향으로 계속 돕니다. 방향키로도 돌릴 수 있습니다. Esc로 일시정지합니다.</p>
       <button type="button" id="relockBtn">마우스 고정 다시 쓰기</button>
       <button type="button" id="newTabBtn">새 탭에서 열기</button>
     </div>
@@ -1568,7 +1568,9 @@ addEventListener('keydown', e => {
   if (e.code.startsWith('Arrow') || e.key === 'Alt') e.preventDefault();
   if (state === 'inv' && (e.code === 'Tab' || e.code === 'Escape' || e.code === 'KeyF')) { e.preventDefault(); closeInv(); return; }
   if (state === 'play' && mode === 'raid' && e.code === 'Tab') { e.preventDefault(); openInv(null); return; }
+  if (state === 'play' && e.code === 'Escape' && !lockMode && !isTouch) { state = 'paused'; $('pauseOv').hidden = false; $('pauseMsg').textContent = '화면을 클릭하면 이어서 진행합니다.'; mouseDown = false; for (const k in keys) keys[k] = false; return; }
   if (state !== 'play') return;
+  lockInput = true;
   keys[e.code] = true;
   if (e.code === 'Space') { e.preventDefault(); jump(); }
   if (e.code === 'KeyR') startReload();
@@ -1606,23 +1608,32 @@ function look(dx, dy, s = SENS) {
 let lockWorked = false, mouseX = 0.5, mouseY = 0.5, mouseIn = false;
 // 고정 없이 조작: 가상 머신이나 원격 접속처럼 마우스 고정이 되긴 하지만 움직임 값이 엉뚱하게 들어오는 환경용.
 // 마우스를 움직인 만큼 시점이 돌고, 커서가 화면 가장자리에 닿으면 계속 돎. 한 번 켜지면 다음에도 유지
-let forceFree = false, lastCX = null, lastCY = null, lockMoved = false, zeroMoves = 0, bigMoves = 0, bigT = 0;
-try { forceFree = localStorage.getItem('scrapyard-nolock') === '1'; } catch (_) {}
-function setFree(on, why) {
-  forceFree = on; try { localStorage.setItem('scrapyard-nolock', on ? '1' : '0'); } catch (_) {}
+let forceFree = false, freeChosen = false, lastCX = null, lastCY = null, lockMoved = false, zeroMoves = 0, bigMoves = 0, bigT = 0, lockIdle = 0, lockInput = false, tipTimer = 0, lockEver = false;
+try { const v = localStorage.getItem('scrapyard-nolock'); if (v !== null) { freeChosen = true; forceFree = v === '1'; } } catch (_) {}
+// persist 가 false 면(자동 전환) 이번 접속에만 적용
+function setFree(on, why, persist = true) {
+  forceFree = on;
+  if (persist) { freeChosen = true; try { localStorage.setItem('scrapyard-nolock', on ? '1' : '0'); } catch (_) {} }
+  $('freeBtn').textContent = on ? '마우스 고정 다시 쓰기' : '마우스 고정 없이 계속 (가상 머신, 원격 접속용)';
   if (on) {
     lockMode = false; lockWorked = false; lastCX = null;
     if (document.pointerLockElement) document.exitPointerLock();
-    if (!isTouch) $('lockTip').hidden = false;
+    showFreeTip();
     if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
     if (why && state === 'play') say(why);
   } else {
-    $('lockTip').hidden = true;
-    if (state === 'play' && !isTouch) { lockMode = true; requestLock(); }
+    $('lockTip').hidden = true; lockMode = !isTouch;
+    if (state === 'play' && !isTouch) requestLock();
   }
 }
+// 안내는 잠깐만 보여 주고 숨김
+function showFreeTip() {
+  if (isTouch) return;
+  $('lockTip').hidden = false; clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => { $('lockTip').hidden = true; }, 8000);
+}
 function requestLock() {
-  if (forceFree) { lockMode = false; if (!isTouch) $('lockTip').hidden = false; return; }
+  if (forceFree) { lockMode = false; showFreeTip(); return; }
   if (isTouch || !canvas.requestPointerLock) { lockFailed(); return; }
   try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(lockFailed); } catch (_) { lockFailed(); }
   setTimeout(() => { if (!lockWorked && lockMode && state === 'play' && document.pointerLockElement !== canvas) lockFailed(); }, 900);
@@ -1643,11 +1654,11 @@ document.addEventListener('mousemove', e => {
   if (document.pointerLockElement === canvas) {
     const mx = e.movementX || 0, my = e.movementY || 0;
     // 고정은 됐는데 움직임이 계속 0 이거나 한 번에 화면의 1/3 이상씩 튀면 가상 머신으로 보고 고정 없이 조작으로 바꿈
-    if (mx || my) { if (Math.abs(mx) < 300 && Math.abs(my) < 300) lockMoved = true; }
-    else if (!lockMoved && ++zeroMoves >= 15) { setFree(true, '이 환경에서는 마우스 고정이 동작하지 않아 고정 없이 조작합니다'); return; }
+    if (mx || my) { if (Math.abs(mx) < 300 && Math.abs(my) < 300) lockMoved = lockEver = true; }
+    else if (!lockEver && ++zeroMoves >= 6) { setFree(true, '이 환경에 맞춰 마우스 조작 방식을 바꿨습니다', false); return; }
     if (Math.abs(mx) > innerWidth * 0.33 || Math.abs(my) > innerHeight * 0.33) {
       const now = performance.now(); if (now - bigT > 2000) { bigT = now; bigMoves = 0; }
-      if (++bigMoves >= 5) { setFree(true, '마우스 움직임이 튀어 고정 없이 조작합니다'); }
+      if (++bigMoves >= 3) { setFree(true, '이 환경에 맞춰 마우스 조작 방식을 바꿨습니다', false); }
       return;
     }
     look(mx, my);
@@ -1672,7 +1683,7 @@ canvas.addEventListener('mousedown', e => {
     if (lockMode) { requestLock(); return; }
     if (!forceFree) requestLock();
   }
-  mouseDown = true; firePressed = true;
+  mouseDown = true; firePressed = true; lockInput = true;
   if (!lockMode) dragInfo = { moved:0 };
 });
 addEventListener('mouseup', () => { mouseDown = false; dragInfo = null; });
@@ -1680,7 +1691,7 @@ addEventListener('mouseup', () => { mouseDown = false; dragInfo = null; });
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas) {
     if (forceFree) { document.exitPointerLock(); return; }
-    lockWorked = true; lockMode = true; lockMoved = false; zeroMoves = 0; bigMoves = 0; $('lockTip').hidden = true;
+    lockWorked = true; lockMode = true; lockMoved = false; zeroMoves = 0; bigMoves = 0; lockIdle = 0; lockInput = false; $('lockTip').hidden = true;
     if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
   } else if (state === 'play' && lockMode) {
     state = 'paused'; $('pauseOv').hidden = false; $('pauseMsg').textContent = '화면을 클릭하면 이어서 진행합니다.'; mouseDown = false; for (const k in keys) keys[k] = false;
@@ -4217,7 +4228,9 @@ function resume() {
   }, 900);
 }
 function resumeFree() {
-  resumeTry++; setFree(true);
+  resumeTry++;
+  if (forceFree) { setFree(false); resume(); return; }   // 버튼이 '마우스 고정 다시 쓰기' 일 때
+  setFree(true);
   $('pauseOv').hidden = true; state = 'play';
 }
 function gameOver() {
@@ -4314,13 +4327,22 @@ resetGame();
 try {
   const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
   const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-  if (/llvmpipe|swiftshader|software|softpipe|svga3d|vmware|virtualbox/i.test(name)) setLowSpec(1);
+  if (/llvmpipe|swiftshader|software|softpipe|svga3d|vmware|virtualbox|virgl|parallels|qxl/i.test(name)) { setLowSpec(1); if (!freeChosen) setFree(true, null, false); }
 } catch (_) {}
-let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0;
+let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0, curHidden = false;
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = now - last;
   const dt = Math.min(0.05, Math.max(0, raw / 1000)); last = now;
+  // 고정 없는 방식으로 플레이 중에는 커서를 숨김
+  const hideCur = state === 'play' && !lockMode && !isTouch;
+  if (hideCur !== curHidden) { curHidden = hideCur; canvas.style.cursor = document.body.style.cursor = hideCur ? 'none' : ''; }
+  // 마우스가 고정된 채 키나 클릭 입력은 있는데 3초 동안 마우스 움직임이 한 번도 안 들어오면 이 환경에서는 고정이 안 먹는 것으로 봄.
+  // 정상적인 움직임이 한 번이라도 들어온 적이 있으면 더 이상 검사하지 않음
+  if (state === 'play' && !isTouch && lockMode && !lockEver && lockInput && document.pointerLockElement === canvas) {
+    lockIdle += Math.min(raw, 100) / 1000;
+    if (lockIdle > 3) setFree(true, '이 환경에 맞춰 마우스 조작 방식을 바꿨습니다', false);
+  }
   // 최근 90프레임 평균이 초당 24프레임보다 느리면 한 단계씩 낮춤
   if (lowSpec < 2 && raw < 1000 && (state === 'play' || state === 'title')) {
     slowAcc += raw; slowN++;
