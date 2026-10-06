@@ -378,7 +378,7 @@ body:not(.is-raid) .raidonly{ display:none; }
       <button class="tb sm raidonly" data-t="frag">수류탄</button>
       <button class="tb sm" data-t="special">탄종</button>
       <button class="tb sm" data-t="zoom">배율</button>
-      <button class="tb sm" data-t="laser">레이저</button>
+      <button class="tb sm" data-t="laser">레이저/라이트</button>
     </div>
   </div>
 
@@ -412,7 +412,7 @@ body:not(.is-raid) .raidonly{ display:none; }
           <dt>G</dt><dd>수류탄 던지기, 2초 뒤 폭발</dd>
           <dt>V</dt><dd>방어구 수리키트 사용</dd>
           <dt>B</dt><dd>특수 탄창(관통탄, 고폭탄) 장전</dd>
-          <dt>T</dt><dd>레이저 켜기, 끄기 (끄면 적이 더 가까이 와야 발견함)</dd>
+          <dt>T</dt><dd>레이저, 라이트 켜기, 끄기 (둘 다 끄면 적이 더 가까이 와야 발견함. 복합기는 누를 때마다 둘 다, 레이저만, 라이트만, 꺼짐 순서)</dd>
           <dt>1 2 3 / 휠</dt><dd>권총(1), 주무기 두 정(2, 3) 교체</dd>
           <dt>4</dt><dd>치료 키트 사용 (H도 가능)</dd>
           <dt>Esc</dt><dd>일시정지</dd>
@@ -433,7 +433,7 @@ body:not(.is-raid) .raidonly{ display:none; }
       <div class="picks" id="picks"></div>
       <div class="picktitle">탄약 <span>모든 무기 무한 탄약, 재장전 없음. 게임 중 B 키(모바일은 탄종 버튼)로 바꿀 수 있습니다</span></div>
       <div class="opts" id="waveAmmoPicks" style="margin:0 0 1.3em"></div>
-      <div class="picktitle">부착물 <span>레이저는 조준하지 않고 쏠 때 탄 퍼짐을 줄여 줍니다</span></div>
+      <div class="picktitle">부착물 <span>레이저는 조준하지 않고 쏠 때 탄 퍼짐을 줄여 주고, 라이트는 어두운 곳을 비춥니다</span></div>
       <div id="attPicks"></div>
       <div class="hbtns"><button class="primary" id="startBtn">시작하기</button></div>
     </div>
@@ -964,6 +964,21 @@ function buildRooms() {
   for (const [k, x, z, ry] of [['blood', -24, -35.95, 0], ['server', 30, -35.95, 0], ['archive', 0, -35.95, 0], ['cryo', -35.95, -6.5, H], ['power', 35.95, 0, -H],
                                ['medical', -24, 35.95, Math.PI], ['armory', -7.77, 31, H], ['bio', 30, 35.95, Math.PI]]) addSign(ROOMS[k], x, z, ry, true);
 }
+// 장거리 협곡 길이 늘리기: 600m 기준 z 좌표를 1200m 좌표로 바꿈.
+// 출발 지점, 거점 3곳(뒤편 금고 포함), 끝 출구는 모양 그대로 옮기고(짝수 번째 구간) 그 사이 통로만 늘림(홀수 번째 구간)
+const CANYON_BZ = 600, CANYON_BX = 21;
+const CANYON_OLD = [-300, -285, -214, -174, -46, -4, 174, 206, 262, 300];
+const CANYON_NEW = [-600, -585, -416, -376, -71, -29, 396, 428, 562, 600];
+// 통로 구간(늘린 구간)의 물건은 넓어진 폭에 맞춰 x 도 벌림. 출발 지점과 거점 안은 그대로
+function CX(x, z) {
+  const O = CANYON_OLD; let i = 0; while (i < O.length - 2 && z > O[i + 1]) i++;
+  return i % 2 ? x * CANYON_BX / 14 : x;
+}
+function CZ(z) {
+  const O = CANYON_OLD, N = CANYON_NEW;
+  let i = 0; while (i < O.length - 2 && z > O[i + 1]) i++;
+  return N[i] + (z - O[i]) * (N[i + 1] - N[i]) / (O[i + 1] - O[i]);
+}
 const MAPS = {
   yard: {
     name:'야적장',
@@ -1035,74 +1050,82 @@ const MAPS = {
   },
   canyon: {
     name:'장거리 협곡',
-    desc:'600m 길이의 일직선 협곡입니다. 거점 3곳을 지나며 저격전을 벌이고, 깊이 들어갈수록 강한 보스와 좋은 보상이 기다립니다. 거점 사이마다 탈출구가 있습니다.',
+    desc:'1200m 길이의 일직선 협곡입니다. 거점 3곳을 지나며 저격전을 벌이고, 깊이 들어갈수록 강한 보스와 좋은 보상이 기다립니다. 거점 사이마다 탈출구가 있습니다.',
     tag:'원거리 교전, 거점 돌파',
-    fog:[150, 480], shadow:305, sun:[10, 110, 4],
+    fog:[150, 480], shadow:CANYON_BZ + 5, sun:[10, 110, 4],
     ai:{ gNear:26, gFar:48, bNear:20, bFar:40, dNear:22, dFar:36, see:135, shotMul:1.35, spreadMul:0.45, life:5 },
     build() {
-      BX = 14; BZ = 300;
+      BX = CANYON_BX; BZ = CANYON_BZ;
+      const Z = CZ, X = x => x * BX / 14;
       addFloor(BX * 2 + 4, BZ * 2 + 4); addBounds(9);
       // 출발 지점: 남쪽 끝 고지대와 경사로, 흉벽
-      PLAT = { minX:-14, maxX:14, minZ:276, maxZ:300, h:3.2 };
+      PLAT = { minX:-BX, maxX:BX, minZ:Z(276), maxZ:Z(300), h:3.2 };
       addPlatform(PLAT);
-      addRamp(0, 276, 267, 4, 3.2);
-      barrier(-8.25, 276.5, 11.5, 0.6, 1.1, 3.2); barrier(8.25, 276.5, 11.5, 0.6, 1.1, 3.2);
-      crate(-11, 285, 1.4, 3.2); crate(11, 285, 1.4, 3.2);
+      addRamp(0, Z(276), Z(267), 4, 3.2);
+      barrier(-(BX + 2.5) / 2, Z(276.5), BX - 2.5, 0.6, 1.1, 3.2); barrier((BX + 2.5) / 2, Z(276.5), BX - 2.5, 0.6, 1.1, 3.2);
+      crate(-(BX - 3), Z(285), 1.4, 3.2); crate(BX - 3, Z(285), 1.4, 3.2);
       const pillar = (x, z) => addBox(x, z, 2, 2, 6, { map:wallTex, color:'#bdb3a2' });
       // 거점: 5.5m 담장으로 둘러싸 멀리서는 안이 보이지 않음.
       // 앞 출입구는 오른쪽, 뒤 출입구는 왼쪽으로 엇갈리게 두고, 안쪽 가림벽으로 일직선 시야를 막음
       const stronghold = (z0, tex) => {
         const WH = 5.5, wall = (x, z, w) => addBox(x, z, w, 0.8, WH, { map:wallTex, color:'#9a9488' });
-        wall(-3.5, z0 + 14, 21); wall(12.5, z0 + 14, 3);
+        // 담장은 협곡 양쪽 벽까지 닿음. 출입구 위치(앞 x 7~11, 뒤 x -11~-7)는 그대로
+        wall((7 - BX) / 2, z0 + 14, BX + 7); wall((11 + BX) / 2, z0 + 14, BX - 11);
         addBox(8.5, z0 + 10.5, 9, 0.6, 3, { map:wallTex, color:'#8a8478' });
-        wall(-12.5, z0 - 14, 3); wall(3.5, z0 - 14, 21);
+        wall(-(11 + BX) / 2, z0 - 14, BX - 11); wall((BX - 7) / 2, z0 - 14, BX + 7);
         addBox(-8.5, z0 - 10.5, 9, 0.6, 3, { map:wallTex, color:'#8a8478' });
         addBox(0, z0, 8, 4, 3, { map:tex });
         crate(-10, z0 + 5); crate(10, z0 - 5);
         barrier(-6, z0 - 6, 0.8, 4, 1.3); barrier(6, z0 + 6, 0.8, 4, 1.3);
-        addLamp(-12.5, z0 + 2, 1); addLamp(12.5, z0 - 2, 0);
+        addLamp(-(BX - 1.5), z0 + 2, 1); addLamp(BX - 1.5, z0 - 2, 0);
       };
-      // 1구간: 출발 ~ 1거점 (z 190)
-      barrier(-7, 254, 8, 0.8, 1.3); crate(9, 252);
-      barrier(7, 236, 8, 0.8, 1.3); pillar(-10, 234);
-      barrier(0, 218, 6, 0.8, 1.3); crate(-11, 220); crate(11, 216);
-      stronghold(190, rust);
-      // 2구간: 1거점 ~ 2거점 사이 210m (저격수 사거리 밖), 탈출구 1
-      barrier(4, 160, 8, 0.8, 1.3);
-      addBox(-9, 141, 3.2, 8, CH, { map:steel }); barrier(6, 137.5, 7, 0.8, 1.3);
-      crate(-11, 120);
-      pillar(10, 106); barrier(-5, 102.5, 8, 0.8, 1.3);
-      barrier(0, 74.5, 8, 0.8, 1.3); crate(12, 71);
-      pillar(10, 40); crate(-11, 32.5);
-      addBox(9, 22, 3.2, 8, CH, { map:rust }); barrier(-4, 8, 8, 0.8, 1.3);
-      // 2거점 (z -20): 저격수 망루, 거점 뒤편 금고 1곳
-      stronghold(-20, steel);
-      addBox(-9, -28, 3, 3, 3, { map:steel }); barrier(-9, -26.6, 3, 0.3, 0.9, 3);
-      addVault({ h:4, cx:-11, cz:-41, rect:[-14, -8, -44, -38],
+      // 금고: 거점 뒤편에 붙어 있으므로 좌표를 통째로 옮김. 뒷벽이 협곡 벽이라 넓어진 만큼 바깥으로 밀어 붙임
+      const vault = o => { const dx = Math.sign(o.cx) * (BX - 14); addVault({ h:o.h, cx:o.cx + dx, cz:Z(o.cz), rect:[o.rect[0] + dx, o.rect[1] + dx, Z(o.rect[2]), Z(o.rect[3])],
+        walls:o.walls.map(w => [w[0] + dx, Z(w[1]), w[2], w[3]]), gate:[o.gate[0] + dx, Z(o.gate[1]), o.gate[2], o.gate[3]],
+        loot:o.loot.map(l => [l[0] + dx, Z(l[1])]), table:o.table, n:o.n }); };
+      // 아래 z 값은 600m 기준 좌표이고 Z()가 1200m 좌표로 바꿈
+      // 1구간: 출발 ~ 1거점
+      barrier(X(-7), Z(254), 8, 0.8, 1.3); crate(X(9), Z(252));
+      barrier(X(7), Z(236), 8, 0.8, 1.3); pillar(X(-10), Z(234));
+      barrier(X(0), Z(218), 6, 0.8, 1.3); crate(X(-11), Z(220)); crate(X(11), Z(216));
+      stronghold(Z(190), rust);
+      // 2구간: 1거점 ~ 2거점 (저격수 사거리 밖), 탈출구 1
+      barrier(X(4), Z(160), 8, 0.8, 1.3);
+      addBox(X(-9), Z(141), 3.2, 8, CH, { map:steel }); barrier(X(6), Z(137.5), 7, 0.8, 1.3);
+      crate(X(-11), Z(120));
+      pillar(X(10), Z(106)); barrier(X(-5), Z(102.5), 8, 0.8, 1.3);
+      barrier(X(0), Z(74.5), 8, 0.8, 1.3); crate(X(12), Z(71));
+      pillar(X(10), Z(40)); crate(X(-11), Z(32.5));
+      addBox(X(9), Z(22), 3.2, 8, CH, { map:rust }); barrier(X(-4), Z(8), 8, 0.8, 1.3);
+      // 2거점: 저격수 망루, 거점 뒤편 금고 1곳
+      stronghold(Z(-20), steel);
+      addBox(-9, Z(-28), 3, 3, 3, { map:steel }); barrier(-9, Z(-26.6), 3, 0.3, 0.9, 3);
+      vault({ h:4, cx:-11, cz:-41, rect:[-14, -8, -44, -38],
         walls:[[-11, -44, 6, 0.4], [-11, -38, 6, 0.4], [-8, -43, 0.4, 2.4], [-8, -39, 0.4, 2.4]],
         gate:[-8, -41, 0.3, 2], loot:[[-12.5, -42.6], [-12.5, -39.4]], table:'vault', n:4 });
-      // 3구간: 2거점 ~ 3거점 사이 170m, 탈출구 2
-      barrier(5, -49, 8, 0.8, 1.3); pillar(-10, -59);
-      barrier(0, -80, 8, 0.8, 1.3); crate(-11, -96);
-      barrier(-6, -117, 8, 0.8, 1.3); addBox(9, -130, 3.2, 8, CH, { map:steel });
-      barrier(4, -160, 8, 0.8, 1.3);
-      // 3거점 (z -190): 뒤편 양쪽 금고 2곳
-      stronghold(-190, rust);
-      addVault({ h:4, cx:11, cz:-209, rect:[8, 14, -212, -206],
+      // 3구간: 2거점 ~ 3거점, 탈출구 2
+      barrier(X(5), Z(-49), 8, 0.8, 1.3); pillar(X(-10), Z(-59));
+      barrier(X(0), Z(-80), 8, 0.8, 1.3); crate(X(-11), Z(-96));
+      barrier(X(-6), Z(-117), 8, 0.8, 1.3); addBox(X(9), Z(-130), 3.2, 8, CH, { map:steel });
+      barrier(X(4), Z(-160), 8, 0.8, 1.3);
+      // 3거점: 뒤편 양쪽 금고 2곳
+      stronghold(Z(-190), rust);
+      vault({ h:4, cx:11, cz:-209, rect:[8, 14, -212, -206],
         walls:[[11, -212, 6, 0.4], [11, -206, 6, 0.4], [8, -211, 0.4, 2.4], [8, -207, 0.4, 2.4]],
         gate:[8, -209, 0.3, 2], loot:[[12.5, -210.6], [12.5, -207.4]], table:'tier3', n:4 });
-      addVault({ h:4, cx:-11, cz:-209, rect:[-14, -8, -212, -206],
+      vault({ h:4, cx:-11, cz:-209, rect:[-14, -8, -212, -206],
         walls:[[-11, -212, 6, 0.4], [-11, -206, 6, 0.4], [-8, -211, 0.4, 2.4], [-8, -207, 0.4, 2.4]],
         gate:[-8, -209, 0.3, 2], loot:[[-12.5, -210.6], [-12.5, -207.4]], table:'tier3', n:4 });
       // 4구간: 3거점 ~ 끝, 탈출구 3
-      barrier(0, -225, 8, 0.8, 1.3); crate(-11, -235); crate(11, -241);
-      barrier(-6, -258, 8, 0.8, 1.3); pillar(10, -268);
-      for (const [x, z, l] of [[-13, 250, 1], [13, 150, 1], [-13, 80, 1], [13, 10, 1], [-13, -100, 1], [13, -160, 1], [-13, -250, 1], [13, 292, 0], [-13, 292, 0]]) addLamp(x, z, l);
-      SPAWNS = [[-10, 168], [0, 164], [10, 168], [-9, 212], [9, 212]];
-      PADS = [[-7, 282], [7, 282], [0, 286], [-10, 292], [10, 292], [0, 294]];
-      START = { x:0, y:3.2 + 1.7, z:290, yaw:0 };
+      barrier(X(0), Z(-225), 8, 0.8, 1.3); crate(X(-11), Z(-235)); crate(X(11), Z(-241));
+      barrier(X(-6), Z(-258), 8, 0.8, 1.3); pillar(X(10), Z(-268));
+      for (const [x, z, l] of [[-13, 250, 1], [13, 150, 1], [-13, 80, 1], [13, 10, 1], [-13, -100, 1], [13, -160, 1], [-13, -250, 1], [13, 292, 0], [-13, 292, 0]]) addLamp(Math.sign(x) * (BX - 1), Z(z), l);
+      // 웨이브 미니게임 스폰 지점: 출발 지점과의 거리는 예전과 같게 유지
+      SPAWNS = [[-6, Z(223)], [0, Z(222)], [6, Z(223)], [-9, Z(241)], [9, Z(241)]];
+      PADS = [[-7, Z(282)], [7, Z(282)], [0, Z(286)], [-10, Z(292)], [10, Z(292)], [0, Z(294)]];
+      START = { x:0, y:3.2 + 1.7, z:Z(290), yaw:0 };
     },
-    titleCam(t) { const z = 284 - ((t * 9) % 570); camera.position.set(Math.sin(t * 0.2) * 5, 9, z); camera.lookAt(0, 2, z - 40); }
+    titleCam(t) { const z = CANYON_BZ - 16 - ((t * 9) % (CANYON_BZ * 2 - 30)); camera.position.set(Math.sin(t * 0.2) * 5, 9, z); camera.lookAt(0, 2, z - 40); }
   }
 };
 function buildLevel(key) {
@@ -1289,20 +1312,24 @@ const ALLOWED = [
   ['none', 'reddot', 'holo']
 ];
 const DEFAULT_SCOPE = ['none', 'none', 'none', 'none', 'none', 'sniper', 'none'];
+// 레일 부착물: laser 값은 false | 'laser' | 'light' | 'combo' (아이템 id 와 같음). 예전 저장의 true 는 'laser' 로 읽음
+const RAILS = { laser:'레이저', light:'라이트', combo:'레이저+라이트' };
+const railOf = v => v === true ? 'laser' : (typeof v === 'string' && RAILS[v] ? v : false);
+const railLaser = v => v === 'laser' || v === 'combo', railLight = v => v === 'light' || v === 'combo';
 let ATT = WEAPONS.map((w, i) => ({ scope:DEFAULT_SCOPE[i], laser:false }));
-try { const v = JSON.parse(localStorage.getItem('scrapyard-att') || 'null'); if (Array.isArray(v) && v.length === WEAPONS.length) ATT = v.map((a, i) => ({ scope:ALLOWED[i].includes(a.scope) ? a.scope : DEFAULT_SCOPE[i], laser:!!a.laser })); } catch (_) {}
+try { const v = JSON.parse(localStorage.getItem('scrapyard-att') || 'null'); if (Array.isArray(v) && v.length === WEAPONS.length) ATT = v.map((a, i) => ({ scope:ALLOWED[i].includes(a.scope) ? a.scope : DEFAULT_SCOPE[i], laser:railOf(a.laser) })); } catch (_) {}
 function saveAtt() { try { localStorage.setItem('scrapyard-att', JSON.stringify(ATT)); } catch (_) {} }
 function applyAttachments(i) {
   const w = WEAPONS[i], a = ATT[i], sc = SCOPES[a.scope];
   const iron = T375 / Math.tan((w.adsFov || 60) / 2 * Math.PI / 180);
-  w.scopeKey = a.scope; w.laser = a.laser; w.view = sc.view;
+  w.scopeKey = a.scope; w.laser = railLaser(a.laser); w.light = railLight(a.laser); w.view = sc.view;
   w.zMin = sc.z ? sc.z[0] : iron; w.zMax = sc.z ? sc.z[1] : iron; w.zoom = w.zMin;
   w.scope = sc.view === 'scope';
   const m = models[i], old = m.userData.att; if (old) m.remove(old);
   const g = new THREE.Group(); m.add(g); m.userData.att = g;
   const [my, mz] = MOUNT[i];
   buildScopeMesh(g, a.scope, my, mz);
-  if (a.laser) buildLaserMesh(g, LASER_MOUNT[i]);
+  if (a.laser) buildLaserMesh(g, LASER_MOUNT[i], a.laser);
   if (!m.userData.iron) buildIron(i);
   m.userData.iron.visible = a.scope === 'none';
 }
@@ -1444,19 +1471,23 @@ function buildScopeMesh(g, key, y, z) {
     if (key !== 'mid') { tube(g, R * 1.25, 0.03, y + 0.06, z + 0.06, std('#e0a030')); }
   }
 }
-function buildLaserMesh(g, p) {
+function buildLaserMesh(g, p, rail) {
   part(g, BOX, scopeBody, [0.04, 0.045, 0.1], p);
-  part(g, BOX, glow('#ff2a2a'), [0.018, 0.018, 0.006], [p[0], p[1], p[2] - 0.052]);
+  if (railLaser(rail)) part(g, BOX, glow('#ff2a2a'), [0.018, 0.018, 0.006], [p[0], p[1] + (rail === 'combo' ? 0.011 : 0), p[2] - 0.052]);
+  if (railLight(rail)) part(g, BOX, glow('#fff1d0'), [0.026, rail === 'combo' ? 0.016 : 0.028, 0.006], [p[0], p[1] - (rail === 'combo' ? 0.011 : 0), p[2] - 0.052]);
 }
 const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.28), new THREE.MeshBasicMaterial({ color:'#ffd27a', transparent:true, opacity:0.95, depthWrite:false, side:THREE.DoubleSide }));
 flash.visible = false; vm.add(flash);
 const flashLight = new THREE.PointLight('#ffc070', 0, 9, 2); scene.add(flashLight);
+// 전술 라이트: 시점에 붙은 조명. 꺼져 있을 때는 밝기만 0 으로 둠
+const torch = new THREE.SpotLight('#fff1d6', 0, 70, 0.42, 0.55, 1.2);
+torch.position.set(0.2, -0.15, 0); torch.target.position.set(0, 0, -10); camera.add(torch); camera.add(torch.target);
 const VM_BASE = new THREE.Vector3(0.26, -0.27, -0.45);
 
 // ---------- 게임 상태 ----------
 let state = 'title', lockMode = false;
 const P = { pos:new THREE.Vector3(), vy:0, yaw:0, pitch:0, onGround:true, hp:100, ar:0, bob:0, feet:0 };
-let laserOn = true;
+let laserOn = true, lightOn = true;
 let leanT = 0, touchLean = 0;
 const EYE = new THREE.Vector3();
 let chargeT = 0, railRelease = false, zoomCur = 1, recoilPitch = 0, recoilYaw = 0, shotAgo = 9;
@@ -1657,11 +1688,19 @@ function setWeapon(si, force) {
   document.querySelectorAll('#slots span').forEach(s => s.classList.toggle('on', +s.dataset.slot === si));
   $('reloadTip').style.opacity = 0;
 }
+// T: 달려 있는 레일 부착물을 켜고 끔. 복합기는 둘 다 → 레이저만 → 라이트만 → 꺼짐 순서로 바뀜
 function toggleLaser() {
-  if (!WEAPONS[weapon].laser) { say('레이저가 장착되어 있지 않습니다', 1); return; }
-  laserOn = !laserOn; SND.play('empty');
-  say(laserOn ? '레이저 켜짐' : '레이저 꺼짐', 1);
+  const w = WEAPONS[weapon];
+  if (!w.laser && !w.light) { say('레이저나 라이트가 장착되어 있지 않습니다', 1); return; }
+  if (w.laser && w.light) {
+    const n = ((laserOn ? 0 : 2) + (lightOn ? 0 : 1) === 0 ? 1 : laserOn && !lightOn ? 2 : !laserOn && lightOn ? 3 : 0);
+    laserOn = n === 0 || n === 1; lightOn = n === 0 || n === 2;
+    say(['레이저와 라이트 켜짐', '레이저만 켜짐', '라이트만 켜짐', '레이저와 라이트 꺼짐'][n], 1);
+  } else if (w.laser) { laserOn = !laserOn; say(laserOn ? '레이저 켜짐' : '레이저 꺼짐', 1); }
+  else { lightOn = !lightOn; say(lightOn ? '라이트 켜짐' : '라이트 꺼짐', 1); }
+  SND.play('empty');
 }
+function lightActive() { return state === 'play' && !!WEAPONS[weapon].light && lightOn; }
 const laserMat = new THREE.LineBasicMaterial({ color:'#ff3030', transparent:true, opacity:0.55 });
 const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]);
 const laserLine = new THREE.Line(laserGeo, laserMat); laserLine.frustumCulled = false; laserLine.visible = false; scene.add(laserLine);
@@ -1669,6 +1708,7 @@ const laserDot = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.Me
 const laserRay = new THREE.Raycaster();
 function laserActive() { const w = WEAPONS[weapon]; return state === 'play' && w.laser && laserOn; }
 function updateLaser() {
+  torch.intensity = lightActive() ? 1.5 : 0;
   const on = laserActive() && !(WEAPONS[weapon].scope && aimT > 0.85);
   laserLine.visible = laserDot.visible = on;
   if (!on) return;
@@ -1791,6 +1831,16 @@ function addBeam(a, b) {
   m.position.copy(a).lerp(b, 0.5); m.lookAt(b);
   scene.add(m); tracers.push({ m, t:0.32, max:0.32 });
 }
+// 폭발이 대상에게 닿는지: 폭발 지점(바닥에서 조금 띄움)에서 대상의 몸통과 머리 쪽으로 선을 그어
+// 둘 다 벽이나 장애물에 막히면 피해 없음. 낮은 엄폐물처럼 한쪽이라도 뚫려 있으면 피해를 받음
+const blastO = new THREE.Vector3(), blastT = new THREE.Vector3();
+function blastReach(p, body, headUp) {
+  blastO.copy(p); blastO.y += 0.5;
+  if (insideSolid(blastO)) blastO.y = p.y + 0.1;
+  if (losTo(blastO, body)) return true;
+  blastT.copy(body); blastT.y += headUp;
+  return losTo(blastO, blastT);
+}
 function explode(p, dmgIn, Rin, selfMax = 35) {
   SND.play('boom'); shakeAmt = Math.max(shakeAmt, 0.3);
   if (mode === 'raid') alertAround(p, 30);
@@ -1804,10 +1854,10 @@ function explode(p, dmgIn, Rin, selfMax = 35) {
     if (e.dead) continue;
     const c = e.g.position.clone(); c.y += e.type === 'drone' ? 0 : e.type === 'bguard' ? 1.5 : e.type === 'snp' ? 1.2 : e.type === 'jugg' ? 2.3 : e.type === 'boss' ? 2.2 : e.type === 'brute' ? 1.6 : 1;
     const d = c.distanceTo(p);
-    if (d < R + e.r * 0.5) { hit = true; if (damageEnemy(e, dmg * (1 - Math.min(1, d / R) * 0.6) * (e.type === 'jugg' ? 0.5 : 1), c.sub(p).normalize())) kill = true; }
+    if (d < R + e.r * 0.5 && blastReach(p, c, 0.6)) { hit = true; if (damageEnemy(e, dmg * (1 - Math.min(1, d / R) * 0.6) * (e.type === 'jugg' ? 0.5 : 1), c.sub(p).normalize())) kill = true; }
   }
-  const pd = new THREE.Vector3(P.pos.x, P.pos.y - 0.8, P.pos.z).distanceTo(p);
-  if (pd < R * 0.75) hurtPlayer(Math.round(selfMax * (1 - pd / (R * 0.75))));
+  const pb = new THREE.Vector3(P.pos.x, P.pos.y - 0.8, P.pos.z), pd = pb.distanceTo(p);
+  if (pd < R * 0.75 && blastReach(p, pb, 0.8)) hurtPlayer(Math.round(selfMax * (1 - pd / (R * 0.75))));
   if (hit) { showHit(kill); SND.play('hit'); }
 }
 const FRAG_DMG = 320, FRAG_R = 5, FRAG_FUSE = 2;
@@ -1821,7 +1871,7 @@ function throwFrag() {
   const f = new THREE.Vector3(); camera.getWorldDirection(f);
   const m = new THREE.Mesh(SPH, fragMat); m.scale.set(0.11, 0.14, 0.11); m.castShadow = true;
   m.position.copy(EYE).addScaledVector(f, 0.6).add(new THREE.Vector3(0, -0.15, 0)); scene.add(m);
-  frags.push({ m, v:f.clone().multiplyScalar(17).add(new THREE.Vector3(0, 3.5, 0)), t:FRAG_FUSE });
+  frags.push({ m, v:f.clone().multiplyScalar(24).add(new THREE.Vector3(0, 1.5, 0)), t:FRAG_FUSE }); // 빠르고 낮게 던져 궤적을 완만하게
   SND.play('swap'); SND.play('throw');
 }
 function updateFrags(dt) {
@@ -2152,9 +2202,9 @@ function updateENades(dt) {
       const p = n.m.position.clone(); p.y = Math.max(p.y, n.target.y + 0.1);
       SND.play('boom'); shakeAmt = Math.max(shakeAmt, 0.3);
       burst(p, '#ff7a3a', 16, 6); burst(p, '#3a3530', 8, 4);
-      const d = new THREE.Vector3(P.pos.x, P.pos.y - 0.8, P.pos.z).distanceTo(p);
+      const pb = new THREE.Vector3(P.pos.x, P.pos.y - 0.8, P.pos.z), d = pb.distanceTo(p);
       const R = n.r || 4.2, D = n.dmg || 65;
-      if (d < R) hurtPlayer(Math.round(D * (1 - d / R)) + 10);
+      if (d < R && blastReach(p, pb, 0.8)) hurtPlayer(Math.round(D * (1 - d / R)) + 10);
       scene.remove(n.m); scene.remove(n.ring); n.ring.material.dispose(); n.dead = true;
     }
   }
@@ -2200,7 +2250,7 @@ function alertAround(pos, r) {
   if (mode === 'raid' && raid && raid.cfg && raid.cfg.alertR && r < raid.cfg.alertR) r = raid.cfg.alertR;
   for (const o of enemies) if (!o.dead && !o.alert && Math.hypot(o.g.position.x - pos.x, o.g.position.z - pos.z) < r) { o.alert = true; o.cd = rand(0.8, 1.6); }
 }
-function seeMul() { return laserActive() ? 1 : 0.7; }
+function seeMul() { return laserActive() || lightActive() ? 1 : 0.7; }
 function updateEnemies(dt) {
   if (NAV) updateNav(dt);
   const eye = EYE;
@@ -2697,6 +2747,7 @@ function updateHud(dt) {
   { const w = WEAPONS[weapon], parts = [];
     if (w.scopeKey && w.scopeKey !== 'none') parts.push(SCOPES[w.scopeKey].name);
     if (w.laser) parts.push(isTouch ? `레이저 ${laserOn ? '켜짐' : '꺼짐'}` : `레이저 ${laserOn ? '켜짐' : '꺼짐'} (T)`);
+    if (w.light) parts.push(isTouch ? `라이트 ${lightOn ? '켜짐' : '꺼짐'}` : `라이트 ${lightOn ? '켜짐' : '꺼짐'} (T)`);
     if (mode === 'wave' && curAmmo() !== 'std') parts.push(AMMO_TYPES[curAmmo()].name + (isTouch ? '' : ' (B)'));
     if (mode === 'raid' && raid && weapon !== 0 && rq(weapon).length) parts.push(rq(weapon).map(q => `${AMMO_TYPES[q.type].name} ${q.n}`).join(' > '));
     setTxt('attTxt', parts.join(', ')); }
@@ -2718,6 +2769,8 @@ const ITEMS = {
   s_vari:{ kind:'scope', key:'vari', name:'가변 배율 조준경', size:1, value:5500 },
   s_sniper:{ kind:'scope', key:'sniper', name:'저격 조준경', size:1, value:7000 },
   laser:{ kind:'laser', name:'레이저 포인터', size:1, value:1800 },
+  light:{ kind:'laser', name:'전술 라이트', size:1, value:1500 },
+  combo:{ kind:'laser', name:'레이저+라이트 복합기', size:1, value:4500 },
   medkit:{ kind:'med', name:'치료 키트', size:1, value:600 },
   frag:{ kind:'throw', name:'수류탄', size:1, value:1500 },
   ammo_ap:{ kind:'ammobox', ammo:'ap', name:'관통탄 탄창', size:1, value:1800 },
@@ -2748,19 +2801,19 @@ const ITEMS = {
   v_region:{ kind:'val', name:'지역대장 지휘 인장', size:1, value:130000 },
   keycard:{ kind:'key', name:'보안 카드키 (5회)', size:1, value:60000 }
 };
-const SHOP = ['ammo_ap', 'ammo_he', 'repkit3', 'frag', 'keycard', 'medkit', 'bag_t', 'bag_l', 's_reddot', 's_holo', 'laser', 's_mid', 'w6', 'w1', 'w2', 's_vari', 'w5', 's_sniper', 'w3', 'w4'];
+const SHOP = ['ammo_ap', 'ammo_he', 'repkit3', 'frag', 'keycard', 'medkit', 'bag_t', 'bag_l', 's_reddot', 's_holo', 'light', 'laser', 'combo', 's_mid', 'w6', 'w1', 'w2', 's_vari', 'w5', 's_sniper', 'w3', 'w4'];
 const LOOT = {
-  weapon:[['repkit2', 1], ['repkit3', 0.4], ['frag', 2.5], ['w2', 3], ['w1', 3], ['w6', 3], ['w5', 1.5], ['w3', 1], ['w4', 0.04], ['ammo', 6], ['s_reddot', 3], ['s_holo', 2], ['s_mid', 1.5], ['laser', 2], ['plate', 3]],
+  weapon:[['repkit2', 1], ['repkit3', 0.4], ['frag', 2.5], ['w2', 3], ['w1', 3], ['w6', 3], ['w5', 1.5], ['w3', 1], ['w4', 0.04], ['ammo', 6], ['s_reddot', 3], ['s_holo', 2], ['s_mid', 1.5], ['laser', 2], ['light', 1.5], ['plate', 3]],
   med:[['repkit1', 2], ['repkit2', 1], ['medkit', 8], ['plate', 3], ['v_sample', 1]],
-  tech:[['keycard', 0.05], ['v_battery', 4], ['v_chip', 3], ['v_drive', 1.2], ['s_vari', 1], ['s_sniper', 0.6], ['laser', 2], ['v_tool', 3]],
+  tech:[['keycard', 0.05], ['v_battery', 4], ['v_chip', 3], ['v_drive', 1.2], ['s_vari', 1], ['s_sniper', 0.6], ['laser', 2], ['light', 1.5], ['combo', 0.6], ['v_tool', 3]],
   bio:[['v_sample', 5], ['v_serum', 3], ['medkit', 2]],
   docs:[['keycard', 0.05], ['v_docs', 6], ['v_chip', 2], ['v_drive', 0.6]],
-  misc:[['repkit1', 1.5], ['repkit2', 0.6], ['frag', 1.5], ['keycard', 0.03], ['v_tool', 4], ['ammo', 4], ['medkit', 3], ['plate', 3], ['s_reddot', 1], ['laser', 1], ['v_battery', 2], ['v_docs', 1]],
+  misc:[['repkit1', 1.5], ['repkit2', 0.6], ['frag', 1.5], ['keycard', 0.03], ['v_tool', 4], ['ammo', 4], ['medkit', 3], ['plate', 3], ['s_reddot', 1], ['laser', 1], ['light', 1], ['v_battery', 2], ['v_docs', 1]],
   drop:[['repkit1', 1], ['frag', 1.2], ['ammo', 5], ['medkit', 3], ['v_tool', 3], ['plate', 2], ['v_battery', 1.5], ['s_reddot', 0.6], ['keycard', 0.02]],
   cmdr:[['v_core', 4], ['v_plan', 3.5], ['v_gold', 3], ['w4', 0.08], ['w3', 1.2], ['s_sniper', 1.5], ['bag_l', 0.8], ['v_drive', 1.5]],
   tier3:[['v_core', 4], ['v_plan', 3], ['v_cmd', 1.2], ['v_gold', 2], ['w4', 0.12], ['s_sniper', 1.2], ['bag_l', 1], ['keycard', 0.8], ['v_jcore', 0.3]],
   bossbox:[['v_gold', 4], ['v_core', 2.2], ['v_plan', 2.6], ['v_drive', 3], ['w5', 1.2], ['w4', 0.06], ['w3', 1], ['s_sniper', 1.2], ['s_vari', 1.5], ['bag_t', 0.8], ['keycard', 0.7]],
-  escort:[['medkit', 3], ['plate', 3], ['ammo', 2], ['s_mid', 1.5], ['s_vari', 0.8], ['laser', 1.5], ['v_chip', 2.5], ['v_drive', 1.5], ['v_serum', 1.5], ['v_gold', 0.6], ['w2', 0.8], ['w6', 0.8], ['w5', 0.4]],
+  escort:[['medkit', 3], ['plate', 3], ['ammo', 2], ['s_mid', 1.5], ['s_vari', 0.8], ['laser', 1.5], ['combo', 0.6], ['v_chip', 2.5], ['v_drive', 1.5], ['v_serum', 1.5], ['v_gold', 0.6], ['w2', 0.8], ['w6', 0.8], ['w5', 0.4]],
   vault:[['v_gold', 4], ['v_core', 2], ['v_plan', 2.5], ['v_drive', 4], ['v_serum', 3], ['w4', 0.06], ['w5', 1], ['s_sniper', 1], ['s_vari', 1.5]]
 };
 const BOX_COL = { bossdrop:'#c9a21a', tier3:'#4dd8ff', jugg:'#4dd8ff', cmdr:'#c9a21a', bossbox:'#3a3d42', escort:'#5a1a1e', boss:'#7a1f24', vault:'#c9a21a', weapon:'#6b7a3a', med:'#e8ecee', tech:'#35607a', bio:'#9a2a36', docs:'#7a6a55', misc:'#8a6a3a', drop:'#2b2e33' };
@@ -2777,18 +2830,18 @@ const RAID = {
           [-29, 29, 'misc'], [-19, 20, 'misc'], [2, 30, 'tech'], [13, 20, 'tech'], [17, 31, 'weapon'], [-7, 8, 'med', 1.2]],
     ext:[{ name:'화물 엘리베이터', x:29, z:-29 }, { name:'비상 계단', x:-29, z:-8 }], boss:[-8, -27], jugg:[-8, 8] },
   canyon:{ time:900, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
-    loot:[[0, 284, 'med', 3.2], [-10, 250, 'misc'], [10, 232, 'misc'],
-          [-11, 198, 'weapon'], [11, 181, 'misc'], [-11, 181, 'tech'],
-          [-6, 134, 'misc'], [11, 102.5, 'weapon'], [-11, 67.5, 'tech'], [5, 18.5, 'misc'],
-          [-11, -12, 'tech'], [11, -29, 'weapon'], [-12, -33, 'docs'],
-          [-8, -72, 'misc'], [6, -111.5, 'tech'], [-11, -132.5, 'weapon'],
-          [-11, -182, 'tech'], [11, -199, 'vault'], [-11, -199, 'weapon'],
-          [-10, -230, 'tech'], [8, -262, 'misc']],
-    ext:[{ name:'1번 배수로', x:-11, z:50 }, { name:'2번 정비 통로', x:-11, z:-145 }, { name:'협곡 끝 출구', x:0, z:-292 }],
+    loot:[[CX(0, 284), CZ(284), 'med', 3.2], [CX(-10, 250), CZ(250), 'misc'], [CX(10, 232), CZ(232), 'misc'],
+          [CX(-11, 198), CZ(198), 'weapon'], [CX(11, 181), CZ(181), 'misc'], [CX(-11, 181), CZ(181), 'tech'],
+          [CX(-6, 134), CZ(134), 'misc'], [CX(11, 102.5), CZ(102.5), 'weapon'], [CX(-11, 67.5), CZ(67.5), 'tech'], [CX(5, 18.5), CZ(18.5), 'misc'],
+          [CX(-11, -12), CZ(-12), 'tech'], [CX(11, -29), CZ(-29), 'weapon'], [CX(-12, -33), CZ(-33), 'docs'],
+          [CX(-8, -72), CZ(-72), 'misc'], [CX(6, -111.5), CZ(-111.5), 'tech'], [CX(-11, -132.5), CZ(-132.5), 'weapon'],
+          [CX(-11, -182), CZ(-182), 'tech'], [CX(11, -199), CZ(-199), 'vault'], [CX(-11, -199), CZ(-199), 'weapon'],
+          [CX(-10, -230), CZ(-230), 'tech'], [CX(8, -262), CZ(-262), 'misc']],
+    ext:[{ name:'1번 배수로', x:CX(-11, 50), z:CZ(50) }, { name:'2번 정비 통로', x:CX(-11, -145), z:CZ(-145) }, { name:'협곡 끝 출구', x:CX(0, -292), z:CZ(-292) }],
     bosses:[
-      { type:'guard', at:[0, 183], escorts:[['brute', 5, 185, 'escort'], ['brute', -5, 185, 'escort']], box:'bossbox', n:5 },
-      { bosses:[{ type:'snp', at:[-9, -28], perch:3 }, { type:'bguard', at:[3, -26] }], escorts:[['grunt', -6, -29, 'elite'], ['drone', 6, -30, 'elite']], box:'cmdr', n:6, boxAt:[0, -30.5] },
-      { bosses:[{ type:'regional', at:[0, -197] }, { type:'bguard', at:[5, -194] }, { type:'mech', at:[-6, -197] }], escorts:[['grunt', 9, -200, 'elite'], ['grunt', -9, -200, 'elite']], box:'tier3', n:8 }
+      { type:'guard', at:[0, CZ(183)], escorts:[['brute', 5, CZ(185), 'escort'], ['brute', -5, CZ(185), 'escort']], box:'bossbox', n:5 },
+      { bosses:[{ type:'snp', at:[-9, CZ(-28)], perch:3 }, { type:'bguard', at:[3, CZ(-26)] }], escorts:[['grunt', -6, CZ(-29), 'elite'], ['drone', 6, CZ(-30), 'elite']], box:'cmdr', n:6, boxAt:[0, CZ(-30.5)] },
+      { bosses:[{ type:'regional', at:[0, CZ(-197)] }, { type:'bguard', at:[5, CZ(-194)] }, { type:'mech', at:[-6, CZ(-197)] }], escorts:[['grunt', 9, CZ(-200), 'elite'], ['grunt', -9, CZ(-200), 'elite']], box:'tier3', n:8 }
     ] }
 };
 const BAG_MAX = 12;
@@ -2908,6 +2961,9 @@ function saveStash() { try { localStorage.setItem('scrapyard-stash', JSON.string
 const addStash = (id, n = 1) => { STASH.items[id] = (STASH.items[id] || 0) + n; if (STASH.items[id] <= 0) delete STASH.items[id]; };
 let HL = { gun:1, scope:'reddot', laser:false, gun2:null, scope2:'none', laser2:false, pScope:'none', pLaser:false, meds:1, frags:0, bag:null, ins:false, key:false, pack:null, armor:0, ammo:'std' };
 try { const v = JSON.parse(localStorage.getItem('scrapyard-hl') || 'null'); if (v) HL = Object.assign(HL, v); } catch (_) {}
+// 레일 부착물 선택: 예전 저장의 true/false 를 새 값으로 변환
+function fixHLRails() { for (const k of ['laser', 'laser2', 'pLaser']) HL[k] = railOf(HL[k]); }
+fixHLRails();
 // 예전 형식(치료 키트, 수류탄 개수, 카드키 여부)을 출격 가방 목록으로 변환
 if (!Array.isArray(HL.pack)) { HL.pack = []; for (let i = 0; i < (HL.meds || 0); i++) HL.pack.push('medkit'); for (let i = 0; i < (HL.frags || 0); i++) HL.pack.push('frag'); if (HL.key) HL.pack.push('keycard'); }
 const PACKABLE = ['med', 'repair', 'throw', 'key', 'ammobox'];
@@ -3089,10 +3145,18 @@ function equipFromBag(idx) {
     } else { say('이 조준경을 달 수 있는 무기가 없습니다', 1); return; }
     setWeapon(slot, true);
   } else if (it.kind === 'laser') {
-    const k = slotOrder().find(k => E.g[k].gun && !E.g[k].laser);
-    if (k !== undefined) { const mw = loadout[k + 1]; raid.bag.splice(idx, 1); E.g[k].laser = true; ATT[mw].laser = true; applyAttachments(mw); say(`${WEAPONS[mw].name}에 레이저 장착`, 1); }
-    else if (!E.pLaser) { raid.bag.splice(idx, 1); E.pLaser = true; ATT[0].laser = true; applyAttachments(0); say('권총에 레이저 장착', 1); }
-    else { say('레이저를 더 달 곳이 없습니다', 1); return; }
+    // 레일 부착물(레이저, 라이트, 복합기): 빈 곳 우선(들고 있는 주무기, 다른 주무기, 권총). 빈 곳이 없으면 들고 있는 무기의 것과 교체
+    const setRail = (k, v) => { if (k < 0) { E.pLaser = v; ATT[0].laser = v; applyAttachments(0); } else { E.g[k].laser = v; ATT[loadout[k + 1]].laser = v; applyAttachments(loadout[k + 1]); } };
+    const getRail = k => (k < 0 ? E.pLaser : E.g[k].laser);
+    let k = slotOrder().find(k => E.g[k].gun && !E.g[k].laser);
+    if (k === undefined && !E.pLaser) k = -1;
+    if (k === undefined) { const h = slot >= 1 && E.g[slot - 1].gun ? slot - 1 : -1; if (getRail(h) !== id) k = h; }
+    if (k === undefined) { say('부착물을 더 달 곳이 없습니다', 1); return; }
+    const old = getRail(k);
+    raid.bag.splice(idx, 1);
+    if (old) bagPushOrDrop(old);
+    setRail(k, id);
+    say(`${k < 0 ? '권총' : WEAPONS[loadout[k + 1]].name}에 ${it.name} 장착`, 1);
     setWeapon(slot, true);
   } else if (it.kind === 'bag') {
     const bonus = CHAR.bag.fx(STASH.ch.bag), newCap = it.cap + bonus;
@@ -3110,14 +3174,14 @@ function unequip(what) {
   if (um) what = um[1];
   const need = id => { if (bagUsed() + ITEMS[id].size > raid.cap) { say('가방 공간이 부족합니다', 1); return false; } return true; };
   if (what === 'scope' && G && G.gun && G.scope !== 'none' && !G.freeScope && ALLOWED[mainW].includes('none')) { if (!need('s_' + G.scope)) return; raid.bag.push('s_' + G.scope); G.scope = 'none'; ATT[mainW].scope = 'none'; applyAttachments(mainW); }
-  else if (what === 'laser' && G && G.gun && G.laser) { if (!need('laser')) return; raid.bag.push('laser'); G.laser = false; ATT[mainW].laser = false; applyAttachments(mainW); }
+  else if (what === 'laser' && G && G.gun && G.laser) { if (!need(G.laser)) return; raid.bag.push(G.laser); G.laser = false; ATT[mainW].laser = false; applyAttachments(mainW); }
   else if (what === 'pscope' && E.pScope === 'reddot') { if (!need('s_reddot')) return; raid.bag.push('s_reddot'); E.pScope = 'none'; ATT[0].scope = 'none'; applyAttachments(0); }
-  else if (what === 'plaser' && E.pLaser) { if (!need('laser')) return; raid.bag.push('laser'); E.pLaser = false; ATT[0].laser = false; applyAttachments(0); }
+  else if (what === 'plaser' && E.pLaser) { if (!need(E.pLaser)) return; raid.bag.push(E.pLaser); E.pLaser = false; ATT[0].laser = false; applyAttachments(0); }
   setWeapon(slot, true); SND.play('empty');
 }
 // ---------- 가방 화면: 아이콘 격자 ----------
 const SHORT = { ammo_ap:'관통탄', ammo_he:'고폭탄', repkit3:'수리 3회', repkit2:'수리 2회', repkit1:'수리 1회', frag:'수류탄', w1:'펌프', w2:'소총', w3:'유탄', w4:'레일건', w5:'저격총', w6:'반자동', s_reddot:'레드닷', s_holo:'홀로', s_mid:'중배율', s_vari:'가변', s_sniper:'저격경',
-  laser:'레이저', medkit:'치료', ammo:'탄약', plate:'방탄판', v_tool:'공구', v_battery:'배터리', v_sample:'혈액', v_docs:'문서', v_chip:'칩', v_serum:'혈청', v_drive:'드라이브',
+  laser:'레이저', light:'라이트', combo:'레이저+라이트', medkit:'치료', ammo:'탄약', plate:'방탄판', v_tool:'공구', v_battery:'배터리', v_sample:'혈액', v_docs:'문서', v_chip:'칩', v_serum:'혈청', v_drive:'드라이브',
   v_gold:'금괴', v_plan:'설계도', v_core:'코어', v_tag:'인식표', v_cmd:'단말기', v_jcore:'동력코어', v_snipe:'기록장치', v_shield:'방패파편', v_mcore:'동력셀', v_region:'지휘인장', keycard:'카드키', bag_t:'전술가방', bag_l:'대형배낭' };
 const rarity = v => v >= 40000 ? 4 : v >= 15000 ? 3 : v >= 6000 ? 2 : v >= 2000 ? 1 : 0;
 const ICONS = {};
@@ -3137,7 +3201,11 @@ function itemIcon(id) {
     if (it.key === 'reddot') { R(16, 22, 32, 22, '#2b3035'); circ(32, 33, 5, '#ff3a2e'); }
     else if (it.key === 'holo') { g.strokeStyle = '#2b3035'; g.lineWidth = 5; g.strokeRect(12, 18, 40, 28); circ(32, 32, 3, '#ff3a2e'); g.strokeStyle = '#ff3a2e'; g.lineWidth = 2; g.beginPath(); g.arc(32, 32, 9, 0, Math.PI * 2); g.stroke(); }
     else { const L = it.key === 'mid' ? 34 : 44; R(32 - L / 2, 26, L, 12, '#2b3035'); R(32 - L / 2 - 4, 23, 8, 18, '#2b3035'); circ(32 - L / 2 - 2, 32, 6, '#4fa3e0'); if (it.key !== 'mid') R(28, 24, 6, 16, '#e0a030'); }
-  } else if (k === 'laser') { R(12, 26, 26, 14, '#2b3035'); R(38, 31, 22, 3, '#ff3a2e'); circ(38, 32, 3, '#ff6a5a'); }
+  } else if (k === 'laser') {
+    R(12, 24, 26, 18, '#2b3035');
+    if (id !== 'light') { const y = id === 'combo' ? 27 : 31; R(38, y, 22, 3, '#ff3a2e'); circ(38, y + 1, 3, '#ff6a5a'); }
+    if (id !== 'laser') { const y = id === 'combo' ? 38 : 33; g.fillStyle = 'rgba(255,241,208,.55)'; g.beginPath(); g.moveTo(38, y); g.lineTo(60, y - 7); g.lineTo(60, y + 7); g.closePath(); g.fill(); circ(38, y, 4, '#fff1d0'); }
+  }
   else if (k === 'bag') { R(16, 16, 32, 38, id === 'bag_l' ? '#5a6b3a' : '#4a5a6a'); R(20, 30, 24, 12, 'rgba(0,0,0,.25)'); R(24, 10, 16, 8, '#2b3035'); }
   else if (k === 'key') { R(10, 18, 44, 28, '#d8dde0'); R(16, 26, 12, 10, '#e0a030'); R(32, 26, 16, 3, '#5a646a'); R(32, 33, 12, 3, '#5a646a'); }
   else if (k === 'med') { R(14, 18, 36, 30, '#eef2f4'); R(28, 22, 8, 22, '#d8323a'); R(21, 29, 22, 8, '#d8323a'); }
@@ -3179,13 +3247,13 @@ function renderInv() {
   // 장착 중 칩
   const E = raid.equip;
   const chips = [];
-  chips.push(`<span class="chip">1번 권총 <b>${E.pScope === 'reddot' ? '레드닷' : '가늠자'}${E.pLaser ? ', 레이저' : ''}</b>${E.pScope === 'reddot' ? '<button class="opt" data-unequip="pscope">레드닷 해제</button>' : ''}${E.pLaser ? '<button class="opt" data-unequip="plaser">레이저 해제</button>' : ''}</span>`);
+  chips.push(`<span class="chip">1번 권총 <b>${E.pScope === 'reddot' ? '레드닷' : '가늠자'}${E.pLaser ? ', ' + RAILS[E.pLaser] : ''}</b>${E.pScope === 'reddot' ? '<button class="opt" data-unequip="pscope">레드닷 해제</button>' : ''}${E.pLaser ? `<button class="opt" data-unequip="plaser">${RAILS[E.pLaser]} 해제</button>` : ''}</span>`);
   E.g.forEach((G, k) => {
     const mainW = loadout[k + 1];
     chips.push(`<span class="chip">${k + 2}번 <b>${G.gun ? gunLabel(G.gun) : '없음'}</b></span>`);
     if (G.gun) {
       chips.push(`<span class="chip">${k + 2}번 조준경 <b>${SCOPES[G.scope].name}</b>${G.scope !== 'none' && !G.freeScope && ALLOWED[mainW].includes('none') ? `<button class="opt" data-unequip="scope${k}">해제</button>` : ''}</span>`);
-      if (G.laser) chips.push(`<span class="chip">${k + 2}번 레이저<button class="opt" data-unequip="laser${k}">해제</button></span>`);
+      if (G.laser) chips.push(`<span class="chip">${k + 2}번 ${RAILS[G.laser]}<button class="opt" data-unequip="laser${k}">해제</button></span>`);
     }
   });
   chips.push(`<span class="chip">가방 <b>${E.pack ? ITEMS[E.pack].name : '기본 가방 (12칸)'}</b></span>`);
@@ -3369,10 +3437,10 @@ function insuredValue() {
     if (!g || g === prev || (prev && ITEMS[g.id].wi === ITEMS[prev.id].wi)) continue;
     prev = g; v += gunValue(g);
     if (sc && sc !== 'none') v += takeV('s_' + sc);
-    if (la) v += takeV('laser');
+    if (railOf(la)) v += takeV(railOf(la));
   }
   if (HL.pScope === 'reddot') v += takeV('s_reddot');
-  if (HL.pLaser) v += takeV('laser');
+  if (railOf(HL.pLaser)) v += takeV(railOf(HL.pLaser));
   if (HL.bag && (it[HL.bag] || 0) > 0) v += ITEMS[HL.bag].value;
   return v;
 }
@@ -3456,14 +3524,14 @@ function beginRaid() {
     if (gun) {
       const main = ITEMS[gun.id].wi;
       const sc = hsc && hsc !== 'none' && ALLOWED[main].includes(hsc) && take('s_' + hsc) ? hsc : (ALLOWED[main].includes('none') ? 'none' : null);
-      G.scope = sc || ALLOWED[main][0]; G.freeScope = !sc; G.laser = !!(hla && take('laser'));
+      G.scope = sc || ALLOWED[main][0]; G.freeScope = !sc; G.laser = railOf(hla) && take(railOf(hla)) ? railOf(hla) : false;
       ATT[main] = { scope:G.scope, laser:G.laser };
       applyUpgrades(gun);
     }
     return G;
   };
   const equip = { g:[mkSlot(gunA, HL.scope, HL.laser), mkSlot(gunB, HL.scope2, HL.laser2)], pScope:'none', pLaser:false, pack:null };
-  equip.pScope = HL.pScope === 'reddot' && take('s_reddot') ? 'reddot' : 'none'; equip.pLaser = HL.pLaser && take('laser');
+  equip.pScope = HL.pScope === 'reddot' && take('s_reddot') ? 'reddot' : 'none'; equip.pLaser = railOf(HL.pLaser) && take(railOf(HL.pLaser)) ? railOf(HL.pLaser) : false;
   ATT[0] = { scope:equip.pScope, laser:equip.pLaser };
   applyUpgradesTo(0, STASH.pistolUp);
   let cap = BAG_MAX; if (HL.bag && take(HL.bag)) { cap = ITEMS[HL.bag].cap; equip.pack = HL.bag; }
@@ -3484,7 +3552,7 @@ function beginRaid() {
   saveStash();
   mode = 'raid'; document.body.classList.add('is-raid');
   loadout = [0, gunA ? ITEMS[gunA.id].wi : null, gunB ? ITEMS[gunB.id].wi : null];
-  loadout.forEach(w => { if (w !== null) applyAttachments(w); }); laserOn = true;
+  loadout.forEach(w => { if (w !== null) applyAttachments(w); }); laserOn = true; lightOn = true;
   buildLevel(raidMap);
   setVault(false);
   clearRaid(); aiming = false;
@@ -3682,15 +3750,15 @@ function raidEnd(ok, why) {
   if (!raid) return;
   $('invOv').hidden = true; invBox = null;
   const r = raid;
-  state = 'over'; mouseDown = false; aiming = false; aimT = 0; laserLine.visible = laserDot.visible = false;
+  state = 'over'; mouseDown = false; aiming = false; aimT = 0; laserLine.visible = laserDot.visible = false; torch.intensity = 0;
   camera.fov = 75; camera.updateProjectionMatrix();
   if (document.pointerLockElement) document.exitPointerLock();
   const rows = [];
   const row = (name, v, sign) => rows.push(`<div class="row gain"><span>${name}</span><span class="v">${sign}${v.toLocaleString()}</span></div>`);
   if (ok) {
     const E = r.equip;
-    for (const G of E.g) { if (!G.gun) continue; STASH.guns.push(G.gun); if (G.scope !== 'none' && !G.freeScope) addStash('s_' + G.scope); if (G.laser) addStash('laser'); }
-    if (E.pScope === 'reddot') addStash('s_reddot'); if (E.pLaser) addStash('laser'); if (E.pack) addStash(E.pack);
+    for (const G of E.g) { if (!G.gun) continue; STASH.guns.push(G.gun); if (G.scope !== 'none' && !G.freeScope) addStash('s_' + G.scope); if (G.laser) addStash(G.laser); }
+    if (E.pScope === 'reddot') addStash('s_reddot'); if (E.pLaser) addStash(E.pLaser); if (E.pack) addStash(E.pack);
     r.bag.forEach((id, i) => { stashBagItem(r, id, i); row(ITEMS[id].name, ITEMS[id].value, '+'); });
     SND.play('clear');
   } else {
@@ -3732,7 +3800,7 @@ function openHideout() {
 }
 const SHOP_CATS = [
   { k:'weapon', name:'무기', icon:'w2', ids:['w6', 'w1', 'w2', 'w5', 'w3', 'w4'] },
-  { k:'att', name:'부착물', icon:'s_vari', ids:['s_reddot', 's_holo', 'laser', 's_mid', 's_vari', 's_sniper'] },
+  { k:'att', name:'부착물', icon:'s_vari', ids:['s_reddot', 's_holo', 'light', 'laser', 'combo', 's_mid', 's_vari', 's_sniper'] },
   { k:'ammo', name:'특수 탄창', icon:'ammo_ap', ids:['ammo_ap', 'ammo_he'] },
   { k:'heal', name:'회복, 소모품', icon:'medkit', ids:['medkit', 'repkit3', 'frag'] },
   { k:'gear', name:'장비, 특수', icon:'bag_l', ids:['bag_t', 'bag_l', 'keycard'] }
@@ -3759,16 +3827,16 @@ function renderHideout() {
     if (!ALLOWED[mainW].includes(HL.scope)) HL.scope = ALLOWED[mainW][0];
     const opts = ALLOWED[mainW].map(k => k === 'none' ? btn('data-scope', 'none', '가늠자', HL.scope === 'none') : btn('data-scope', k, `${SCOPES[k].name} (${it['s_' + k] || 0})`, HL.scope === k, !has('s_' + k)));
     h += `<div class="attrow"><span>조준경</span><div class="opts">${opts.join('')}</div></div>`;
-    h += `<div class="attrow"><span>레이저</span><div class="opts">${btn('data-laser', 'm', `장착 (${it.laser || 0})`, HL.laser, !has('laser'))}</div></div>`;
+    h += `<div class="attrow"><span>레일 부착물</span><div class="opts">${Object.keys(RAILS).map(r => btn('data-laser', r, `${RAILS[r]} (${it[r] || 0})`, HL.laser === r, !has(r))).join('')}</div></div>`;
   }
   h += `<div class="attrow"><span>주무기 (3번)</span><div class="opts">${btn('data-gun2', '', '없음', !gun2)}${STASH.guns.filter(g => g !== gun).map(g => btn('data-gun2', g.uid, gunLabel(g), HL.gun2 === g.uid, !!gun && ITEMS[g.id].wi === mainW)).join('')}<span class="hint">같은 종류의 총은 두 정 들 수 없습니다</span></div></div>`;
   if (gun2) {
     if (!ALLOWED[mainW2].includes(HL.scope2)) HL.scope2 = ALLOWED[mainW2][0];
     const opts2 = ALLOWED[mainW2].map(k => k === 'none' ? btn('data-scope2', 'none', '가늠자', HL.scope2 === 'none') : btn('data-scope2', k, `${SCOPES[k].name} (${it['s_' + k] || 0})`, HL.scope2 === k, !has('s_' + k)));
     h += `<div class="attrow"><span>조준경 (3번)</span><div class="opts">${opts2.join('')}</div></div>`;
-    h += `<div class="attrow"><span>레이저 (3번)</span><div class="opts">${btn('data-laser2', 'm2', `장착 (${it.laser || 0})`, HL.laser2, !has('laser'))}</div></div>`;
+    h += `<div class="attrow"><span>레일 부착물 (3번)</span><div class="opts">${Object.keys(RAILS).map(r => btn('data-laser2', r, `${RAILS[r]} (${it[r] || 0})`, HL.laser2 === r, !has(r))).join('')}</div></div>`;
   }
-  h += `<div class="attrow"><span>권총</span><div class="opts">${btn('data-pscope', 'reddot', `레드닷 (${it.s_reddot || 0})`, HL.pScope === 'reddot', !has('s_reddot'))}${btn('data-plaser', 'p', `레이저 (${it.laser || 0})`, HL.pLaser, !has('laser'))}</div></div>`;
+  h += `<div class="attrow"><span>권총</span><div class="opts">${btn('data-pscope', 'reddot', `레드닷 (${it.s_reddot || 0})`, HL.pScope === 'reddot', !has('s_reddot'))}${Object.keys(RAILS).map(r => btn('data-plaser', r, `${RAILS[r]} (${it[r] || 0})`, HL.pLaser === r, !has(r))).join('')}</div></div>`;
   if (HL.bag && !has(HL.bag)) HL.bag = null;
   h += `<div class="attrow"><span>가방</span><div class="opts">${btn('data-bag', '', '기본 가방 (12칸)', !HL.bag)}${['bag_t', 'bag_l'].map(id => btn('data-bag', id, `${ITEMS[id].name} (${it[id] || 0})`, HL.bag === id, !has(id))).join('')}</div></div>`;
   h += `<div class="attrow"><span>방어구</span><div class="opts">${ARMOR_TIERS.map((a, i) => btn('data-armor', i, `${a.name} (${a.pts}, ${Math.round(a.abs * 100)}%)${a.cost ? ' ' + (a.cost / 1000) + '천' : ' 무료'}`, (HL.armor || 0) === i)).join('')}<span class="hint">괄호 안은 방어구 수치와 피해 흡수율. 비용은 출격할 때마다 냄</span></div></div>`;
@@ -3851,11 +3919,11 @@ function renderHideout() {
   on('[data-gun]', b => { HL.gun = b.dataset.gun ? +b.dataset.gun : null; });
   on('[data-gun2]', b => { HL.gun2 = b.dataset.gun2 ? +b.dataset.gun2 : null; });
   on('[data-scope2]', b => { HL.scope2 = b.dataset.scope2; });
-  on('[data-laser2]', () => { HL.laser2 = !HL.laser2; });
+  on('[data-laser2]', b => { HL.laser2 = HL.laser2 === b.dataset.laser2 ? false : b.dataset.laser2; });
   on('[data-scope]', b => { HL.scope = b.dataset.scope; });
-  on('[data-laser]', () => { HL.laser = !HL.laser; });
+  on('[data-laser]', b => { HL.laser = HL.laser === b.dataset.laser ? false : b.dataset.laser; });
   on('[data-pscope]', () => { HL.pScope = HL.pScope === 'reddot' ? 'none' : 'reddot'; });
-  on('[data-plaser]', () => { HL.pLaser = !HL.pLaser; });
+  on('[data-plaser]', b => { HL.pLaser = HL.pLaser === b.dataset.plaser ? false : b.dataset.plaser; });
   on('[data-meds]', b => { HL.meds = +b.dataset.meds; });
   on('[data-frags]', b => { HL.frags = +b.dataset.frags; });
   on('[data-armor]', b => { HL.armor = +b.dataset.armor; });
@@ -3910,7 +3978,8 @@ function importSave(text) {
   migrateChar();
   if (!STASH.keys) STASH.keys = []; if (!STASH.pistolUp) STASH.pistolUp = { dmg:0, rec:0, rel:0, mag:0 };
   if (d.hl) HL = Object.assign(HL, d.hl);
-  if (Array.isArray(d.att) && d.att.length === WEAPONS.length) ATT = d.att;
+  fixHLRails();
+  if (Array.isArray(d.att) && d.att.length === WEAPONS.length) ATT = d.att.map(a => ({ ...a, laser:railOf(a.laser) }));
   if (d.sens >= 0.2 && d.sens <= 3) { sensMul = d.sens; $('sens').value = sensMul; $('sensVal').textContent = sensMul.toFixed(1); try { localStorage.setItem('scrapyard-sens', String(sensMul)); } catch (_) {} }
   if (MAPS[d.map]) { mapChoice = d.map; buildLevel(mapChoice); try { localStorage.setItem('scrapyard-map', mapChoice); } catch (_) {} }
   // 파밍 모드 맵: 예전 저장은 map 값을 쓰고, 야적장이면 그대로 둠
@@ -4047,7 +4116,7 @@ function begin() {
   buildLevel(mapChoice); setVault(false);
   mode = 'wave'; clearRaid(); $('raidTop').hidden = true; $('waveTop').hidden = false; $('extList').innerHTML = ''; $('prompt').textContent = '';
   loadout = [0, mainChoice];
-  loadout.forEach(applyAttachments); laserOn = true;
+  loadout.forEach(applyAttachments); laserOn = true; lightOn = true;
   for (const w of loadout) applyUpgradesTo(w, { rec:5, rel:5, mag:5 });
   buildLevel(mapChoice);
   aiming = false;
@@ -4078,7 +4147,7 @@ function resumeFree() {
 }
 function gameOver() {
   if (mode === 'raid') { raidEnd(false, '쓰러졌습니다'); return; }
-  state = 'over'; mouseDown = false; aiming = false; aimT = 0; laserLine.visible = laserDot.visible = false;
+  state = 'over'; mouseDown = false; aiming = false; aimT = 0; laserLine.visible = laserDot.visible = false; torch.intensity = 0;
   camera.fov = 75; camera.updateProjectionMatrix();
   SND.play('over');
   if (document.pointerLockElement) document.exitPointerLock();
@@ -4107,13 +4176,13 @@ function renderAtt() {
   const row = (wi, label) => {
     const a = ATT[wi];
     const scopes = ALLOWED[wi].map(k => `<button type="button" class="opt" data-wi="${wi}" data-scope="${k}" aria-pressed="${a.scope === k}">${SCOPES[k].name}</button>`).join('');
-    const laser = `<button type="button" class="opt" data-wi="${wi}" data-laser="1" aria-pressed="${a.laser}">레이저 ${a.laser ? '장착' : '미장착'}</button>`;
+    const laser = Object.keys(RAILS).map(r => `<button type="button" class="opt" data-wi="${wi}" data-laser="${r}" aria-pressed="${a.laser === r}">${RAILS[r]}</button>`).join('');
     return `<div class="attrow"><span>${label}</span><div class="opts">${scopes}${laser}</div></div>`;
   };
   $('attPicks').innerHTML = row(mainChoice, WEAPONS[mainChoice].name) + row(0, '권총');
   $('attPicks').querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => {
     const wi = +b.dataset.wi;
-    if (b.dataset.scope) ATT[wi].scope = b.dataset.scope; else ATT[wi].laser = !ATT[wi].laser;
+    if (b.dataset.scope) ATT[wi].scope = b.dataset.scope; else ATT[wi].laser = ATT[wi].laser === b.dataset.laser ? false : b.dataset.laser;
     saveAtt(); renderAtt();
   }));
 }
