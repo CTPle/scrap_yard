@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>폭탄 미로</title>
+<style>
+  :root{ --bg:#1b1714; --ink:#f3e7d2; --dim:#a8977f; --amber:#ffb238; --floor:#3a3229; --floor2:#352d25; --solid:#6f6457; --solidTop:#8a7d6d; --soft:#b9753a; --softTop:#d49250; }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{ background:var(--bg); color:var(--ink); font-family:"Trebuchet MS","Malgun Gothic","Apple SD Gothic Neo",sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:10px; touch-action:none; user-select:none; -webkit-user-select:none; }
+  h1{ margin:0; font-size:22px; letter-spacing:.18em; color:var(--amber); }
+  .bar{ display:flex; flex-wrap:wrap; justify-content:center; gap:6px 18px; font-size:13.5px; color:var(--dim); }
+  .bar b{ color:var(--ink); font-size:17px; margin-left:5px; font-variant-numeric:tabular-nums; }
+  .wrap{ position:relative; width:min(96vw, 110vh, 650px); aspect-ratio:13/11; }
+  canvas{ width:100%; height:100%; display:block; border-radius:6px; background:var(--floor); }
+  .msg{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; background:rgba(27,23,20,.84); text-align:center; border-radius:6px; padding:16px; }
+  .msg[hidden]{ display:none; }
+  .msg strong{ font-size:24px; color:var(--amber); }
+  .msg span{ font-size:14px; color:var(--dim); line-height:1.65; }
+  button{ font:inherit; font-weight:700; color:var(--bg); background:var(--amber); border:0; padding:10px 22px; border-radius:4px; cursor:pointer; }
+  button:focus-visible{ outline:3px solid var(--ink); outline-offset:2px; }
+  .touch{ display:none; width:min(96vw, 650px); justify-content:space-between; align-items:center; }
+  .pad{ display:grid; grid-template-columns:repeat(3, 54px); grid-template-rows:repeat(2, 54px); gap:6px; }
+  .pad button, .bombBtn{ padding:0; background:#4a4036; color:var(--ink); font-size:19px; }
+  .pad .u{ grid-column:2; } .pad .l{ grid-column:1; grid-row:2; } .pad .d{ grid-column:2; grid-row:2; } .pad .r{ grid-column:3; grid-row:2; }
+  .bombBtn{ width:92px; height:92px; border-radius:50%; background:var(--amber); color:var(--bg); font-size:16px; }
+  @media (pointer:coarse){ .touch{ display:flex; } .wrap{ width:min(96vw, 70vh, 650px); } }
+  .help{ font-size:12.5px; color:var(--dim); text-align:center; }
+</style>
+</head>
+<body>
+  <h1>폭탄 미로</h1>
+  <div class="bar"><span>단계<b id="stage">1</b></span><span>점수<b id="score">0</b></span><span>목숨<b id="lives">3</b></span><span>폭탄<b id="bombs">1</b></span><span>화력<b id="range">2</b></span><span>남은 적<b id="left">0</b></span></div>
+  <div class="wrap">
+    <canvas id="cv" width="650" height="550"></canvas>
+    <div class="msg" id="msg">
+      <strong id="msgTitle">폭탄 미로</strong>
+      <span id="msgText">폭탄으로 나무 상자를 부수고 적을 모두 없애면 다음 단계로 갑니다.<br>자기 폭탄의 불길에도 당하니 놓고 바로 피하십시오.<br>상자에서 나오는 주황 표식은 폭탄 수, 붉은 표식은 화력을 올려 줍니다.</span>
+      <button id="startBtn" type="button">시작</button>
+    </div>
+  </div>
+  <div class="touch">
+    <div class="pad" aria-label="방향 버튼">
+      <button class="u" data-k="up" type="button" aria-label="위">▲</button>
+      <button class="l" data-k="left" type="button" aria-label="왼쪽">◀</button>
+      <button class="d" data-k="down" type="button" aria-label="아래">▼</button>
+      <button class="r" data-k="right" type="button" aria-label="오른쪽">▶</button>
+    </div>
+    <button class="bombBtn" id="bombBtn" type="button">폭탄</button>
+  </div>
+  <div class="help">방향키 또는 WASD: 이동 / Space: 폭탄 놓기 / P: 일시정지</div>
+
+<script>
+const W = 13, H = 11, T = 50;
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const DIRS = { up:[0, -1], down:[0, 1], left:[-1, 0], right:[1, 0] };
+const FUSE = 2.2, FLAME = 0.45, MOVE = 0.13;
+let map, items, bombs, flames, enemies, P, stage, score, lives, state = 'title', keys = {}, last = 0;
+
+const rnd = n => Math.floor(Math.random() * n);
+const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+const bombAt = (x, y) => bombs.find(b => b.x === x && b.y === y);
+const flameAt = (x, y) => flames.some(f => f.x === x && f.y === y);
+const walkable = (x, y) => inb(x, y) && map[y][x] === 0 && !bombAt(x, y);
+
+function buildStage() {
+  map = []; items = {}; bombs = []; flames = [];
+  for (let y = 0; y < H; y++) { map.push([]); for (let x = 0; x < W; x++) {
+    const edge = x === 0 || y === 0 || x === W - 1 || y === H - 1, pillar = x % 2 === 0 && y % 2 === 0;
+    const safe = (x <= 2 && y <= 2);
+    map[y].push(edge || pillar ? 1 : (!safe && Math.random() < 0.55 ? 2 : 0));
+  } }
+  // 상자 속 아이템: 폭탄 수(b), 화력(r)
+  const soft = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (map[y][x] === 2) soft.push([x, y]);
+  soft.sort(() => Math.random() - 0.5);
+  soft.slice(0, 3).forEach(([x, y]) => { items[x + ',' + y] = { type:'b', open:false }; });
+  soft.slice(3, 6).forEach(([x, y]) => { items[x + ',' + y] = { type:'r', open:false }; });
+  // 적: 출발 지점에서 먼 빈 칸에 배치
+  enemies = [];
+  const free = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (map[y][x] === 0 && x + y > 8) free.push([x, y]);
+  free.sort(() => Math.random() - 0.5);
+  const n = Math.min(free.length, 2 + stage);
+  for (let i = 0; i < n; i++) enemies.push({ x:free[i][0], y:free[i][1], px:free[i][0], py:free[i][1], d:Object.values(DIRS)[rnd(4)], cd:0.5 + Math.random() * 0.5, step:Math.max(0.2, 0.46 - stage * 0.03) });
+  P.x = P.px = 1; P.y = P.py = 1; P.cd = 0; P.safe = 2;
+}
+function newGame() {
+  stage = 1; score = 0; lives = 3; P = { x:1, y:1, px:1, py:1, cd:0, safe:2, maxBombs:1, range:2 };
+  buildStage(); state = 'play'; $('msg').hidden = true; hud();
+}
+function hud() {
+  $('stage').textContent = stage; $('score').textContent = score; $('lives').textContent = lives;
+  $('bombs').textContent = P.maxBombs; $('range').textContent = P.range; $('left').textContent = enemies.length;
+}
+function show(title, text, btn) { $('msgTitle').textContent = title; $('msgText').innerHTML = text; $('startBtn').textContent = btn; $('msg').hidden = false; }
+
+function placeBomb() {
+  if (state !== 'play') return;
+  if (bombs.filter(b => b.own).length >= P.maxBombs || bombAt(P.x, P.y)) return;
+  bombs.push({ x:P.x, y:P.y, t:FUSE, range:P.range, own:true });
+}
+function explode(b) {
+  bombs.splice(bombs.indexOf(b), 1);
+  const put = (x, y) => { flames.push({ x, y, t:FLAME }); };
+  put(b.x, b.y);
+  for (const [dx, dy] of Object.values(DIRS)) {
+    for (let i = 1; i <= b.range; i++) {
+      const x = b.x + dx * i, y = b.y + dy * i;
+      if (!inb(x, y) || map[y][x] === 1) break;
+      if (map[y][x] === 2) { map[y][x] = 0; const it = items[x + ',' + y]; if (it) it.open = true; put(x, y); score += 5; break; }
+      put(x, y);
+      const o = bombAt(x, y); if (o) o.t = Math.min(o.t, 0.06);   // 연쇄 폭발
+    }
+  }
+}
+function hurt() {
+  if (P.safe > 0 || state !== 'play') return;
+  lives--; hud();
+  if (lives <= 0) { state = 'over'; show('게임 끝', `도달한 단계 ${stage}<br>점수 ${score}점`, '다시 하기'); return; }
+  P.x = P.px = 1; P.y = P.py = 1; P.safe = 2.5;
+}
+function update(dt) {
+  // 플레이어 이동: 한 칸씩
+  P.cd -= dt; P.safe = Math.max(0, P.safe - dt);
+  if (P.cd <= 0) {
+    for (const k of ['up', 'down', 'left', 'right']) {
+      if (!keys[k]) continue;
+      const nx = P.x + DIRS[k][0], ny = P.y + DIRS[k][1];
+      if (walkable(nx, ny)) { P.x = nx; P.y = ny; P.cd = MOVE; break; }
+    }
+  }
+  const it = items[P.x + ',' + P.y];
+  if (it && it.open) { if (it.type === 'b') P.maxBombs = Math.min(5, P.maxBombs + 1); else P.range = Math.min(6, P.range + 1); delete items[P.x + ',' + P.y]; score += 50; hud(); }
+  // 폭탄과 불길
+  for (const b of bombs.slice()) { b.t -= dt; if (b.t <= 0 && bombs.includes(b)) explode(b); }
+  for (const f of flames) f.t -= dt;
+  flames = flames.filter(f => f.t > 0);
+  // 적 이동: 가던 방향으로 가다가 막히거나 가끔 방향을 바꿈
+  for (const e of enemies) {
+    e.cd -= dt;
+    if (e.cd > 0) continue;
+    e.cd = e.step;
+    const opts = Object.values(DIRS).filter(d => walkable(e.x + d[0], e.y + d[1]) && !flameAt(e.x + d[0], e.y + d[1]));
+    if (!opts.length) continue;
+    const keep = opts.find(d => d[0] === e.d[0] && d[1] === e.d[1]);
+    const fwd = opts.filter(d => !(d[0] === -e.d[0] && d[1] === -e.d[1]));
+    e.d = keep && Math.random() < 0.75 ? keep : (fwd.length ? fwd[rnd(fwd.length)] : opts[rnd(opts.length)]);
+    e.x += e.d[0]; e.y += e.d[1];
+  }
+  // 판정
+  const before = enemies.length;
+  enemies = enemies.filter(e => !flameAt(e.x, e.y));
+  if (enemies.length !== before) { score += (before - enemies.length) * 100; hud(); }
+  if (flameAt(P.x, P.y) || enemies.some(e => e.x === P.x && e.y === P.y)) hurt();
+  if (state === 'play' && !enemies.length) { state = 'clear'; score += 300; hud(); show(`${stage}단계 완료`, `점수 ${score}점<br>다음 단계는 적이 더 많고 빠릅니다`, '다음 단계'); }
+  // 부드러운 움직임
+  const k = Math.min(1, dt * 18);
+  P.px += (P.x - P.px) * k; P.py += (P.y - P.py) * k;
+  for (const e of enemies) { const ke = Math.min(1, dt * 9); e.px += (e.x - e.px) * ke; e.py += (e.y - e.py) * ke; }
+}
+function box(x, y, top, side) { g.fillStyle = side; g.fillRect(x * T, y * T, T, T); g.fillStyle = top; g.fillRect(x * T + 3, y * T + 3, T - 6, T - 10); }
+function draw(t) {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    g.fillStyle = (x + y) % 2 ? '#3a3229' : '#352d25'; g.fillRect(x * T, y * T, T, T);
+    if (map[y][x] === 1) box(x, y, '#8a7d6d', '#5d5348');
+    else if (map[y][x] === 2) { box(x, y, '#d49250', '#9a5e2c'); g.strokeStyle = '#9a5e2c'; g.lineWidth = 2; g.beginPath(); g.moveTo(x * T + 6, y * T + 6); g.lineTo(x * T + T - 6, y * T + T - 10); g.moveTo(x * T + T - 6, y * T + 6); g.lineTo(x * T + 6, y * T + T - 10); g.stroke(); }
+  }
+  for (const key in items) { const it = items[key]; if (!it.open) continue; const [x, y] = key.split(',').map(Number);
+    g.fillStyle = it.type === 'b' ? '#ffb238' : '#ff5a3c'; g.beginPath(); g.arc(x * T + T / 2, y * T + T / 2, 13 + Math.sin(t * 5) * 1.5, 0, 7); g.fill();
+    g.fillStyle = '#1b1714'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(it.type === 'b' ? '폭' : '화', x * T + T / 2, y * T + T / 2 + 1); }
+  for (const b of bombs) { const r = 15 + Math.sin(t * 12) * 2;
+    g.fillStyle = '#15120f'; g.beginPath(); g.arc(b.x * T + T / 2, b.y * T + T / 2 + 2, r, 0, 7); g.fill();
+    g.fillStyle = b.t < 0.6 ? '#ff5a3c' : '#ffb238'; g.beginPath(); g.arc(b.x * T + T / 2 + 8, b.y * T + T / 2 - 12, 4, 0, 7); g.fill(); }
+  for (const f of flames) { const a = Math.min(1, f.t / FLAME * 1.6);
+    g.fillStyle = `rgba(255,120,40,${a})`; g.fillRect(f.x * T + 3, f.y * T + 3, T - 6, T - 6);
+    g.fillStyle = `rgba(255,230,140,${a})`; g.fillRect(f.x * T + 13, f.y * T + 13, T - 26, T - 26); }
+  for (const e of enemies) { const cx = e.px * T + T / 2, cy = e.py * T + T / 2;
+    g.fillStyle = '#c0407a'; g.beginPath(); g.arc(cx, cy, 17, Math.PI, 0); g.lineTo(cx + 17, cy + 15); g.lineTo(cx + 8, cy + 9); g.lineTo(cx, cy + 15); g.lineTo(cx - 8, cy + 9); g.lineTo(cx - 17, cy + 15); g.closePath(); g.fill();
+    g.fillStyle = '#fff'; g.fillRect(cx - 9, cy - 6, 6, 7); g.fillRect(cx + 3, cy - 6, 6, 7); g.fillStyle = '#1b1714'; g.fillRect(cx - 7 + e.d[0] * 2, cy - 4 + e.d[1] * 2, 3, 4); g.fillRect(cx + 5 + e.d[0] * 2, cy - 4 + e.d[1] * 2, 3, 4); }
+  if (!(P.safe > 0 && Math.floor(t * 10) % 2)) { const cx = P.px * T + T / 2, cy = P.py * T + T / 2;
+    g.fillStyle = '#4fc3e8'; g.fillRect(cx - 13, cy - 4, 26, 20);
+    g.fillStyle = '#f3e7d2'; g.beginPath(); g.arc(cx, cy - 7, 12, 0, 7); g.fill();
+    g.fillStyle = '#1b1714'; g.fillRect(cx - 6, cy - 9, 3, 5); g.fillRect(cx + 3, cy - 9, 3, 5); }
+}
+function frame(ms) {
+  const t = ms / 1000, dt = Math.min(0.05, t - last); last = t;
+  if (state === 'play') update(dt);
+  if (map) draw(t);
+  requestAnimationFrame(frame);
+}
+function go() {
+  if (state === 'clear') { stage++; buildStage(); state = 'play'; $('msg').hidden = true; hud(); }
+  else if (state === 'pause') { state = 'play'; $('msg').hidden = true; }
+  else newGame();
+}
+const KEYMAP = { ArrowUp:'up', KeyW:'up', ArrowDown:'down', KeyS:'down', ArrowLeft:'left', KeyA:'left', ArrowRight:'right', KeyD:'right' };
+addEventListener('keydown', e => {
+  const k = KEYMAP[e.code];
+  if (k) { e.preventDefault(); keys[k] = true; }
+  if (e.code === 'Space') { e.preventDefault(); if (state === 'play') placeBomb(); else if (!e.repeat) go(); }
+  if (e.code === 'Enter' && state !== 'play') go();
+  if (e.code === 'KeyP') { if (state === 'play') { state = 'pause'; show('일시정지', 'P 또는 버튼으로 계속합니다', '계속'); } else if (state === 'pause') go(); }
+});
+addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) keys[k] = false; });
+addEventListener('blur', () => { keys = {}; });
+$('startBtn').addEventListener('click', go);
+document.querySelectorAll('.pad button').forEach(b => {
+  b.addEventListener('pointerdown', e => { e.preventDefault(); keys[b.dataset.k] = true; });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => { keys[b.dataset.k] = false; });
+});
+$('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); placeBomb(); });
+// 시작 화면 배경
+stage = 1; score = 0; lives = 3; P = { x:1, y:1, px:1, py:1, cd:0, safe:0, maxBombs:1, range:2 }; buildStage(); hud();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
