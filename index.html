@@ -379,6 +379,7 @@ body:not(.is-raid) .raidonly{ display:none; }
       <button class="tb sm" data-t="special">탄종</button>
       <button class="tb sm" data-t="zoom">배율</button>
       <button class="tb sm" data-t="laser">레이저/라이트</button>
+      <button class="tb sm" data-t="crouch">앉기</button>
     </div>
   </div>
 
@@ -407,6 +408,7 @@ body:not(.is-raid) .raidonly{ display:none; }
           <dt>방향키</dt><dd>시점 회전 (마우스 대신 사용 가능)</dd>
           <dt>Space</dt><dd>점프 (낮은 장애물 위로 올라갈 수 있음)</dd>
           <dt>R</dt><dd>재장전</dd>
+          <dt>C</dt><dd>앉기, 일어서기 (낮은 엄폐물 뒤에 숨고 덜 발견됨. 이동은 느려지며 달리거나 점프하면 일어섬)</dd>
           <dt>Q / E</dt><dd>누르고 있는 동안 왼쪽, 오른쪽으로 몸 기울이기 (엄폐 사격)</dd>
           <dt>F / Tab / H</dt><dd>상자 열기, 문 열기 / 가방 보기 / 치료 키트 사용</dd>
           <dt>G</dt><dd>수류탄 던지기, 2초 뒤 폭발</dd>
@@ -752,8 +754,10 @@ function addLamp(x, z, light) {
   lamp.position.set(x, 5.65, z); level.add(lamp);
   if (light) { const l = new THREE.PointLight('#ffb070', 1.2, 40, 2); l.position.set(x, 5.5, z); level.add(l); }
 }
-function barrier(x, z, w, d, h = 1.1, base = 0) { addBox(x, z, w, d, h, { map:stripeTex, base }); }
-function crate(x, z, sz = 2, base = 0) { addBox(x, z, sz, sz, sz === 2 ? 2 : 1.2, { map:crateTex, base }); }
+// 낮은 엄폐물(방벽, 작은 상자)은 모든 맵에서 1.3m 로 통일: 앉으면 완전히 가려지고, 서면 넘겨 쏠 수 있고, 점프로 올라갈 수 있는 높이
+const COVER_H = 1.3;
+function barrier(x, z, w, d, h = COVER_H, base = 0) { addBox(x, z, w, d, h, { map:stripeTex, base }); }
+function crate(x, z, sz = 2, base = 0) { addBox(x, z, sz, sz, sz === 2 ? 2 : COVER_H, { map:crateTex, base }); }
 
 const labWallTex = canvasTex(128, (g, s) => {
   g.fillStyle = '#d3d8db'; g.fillRect(0, 0, s, s);
@@ -871,7 +875,7 @@ function buildRooms44() {
   { const cx = -24, cz = -8;
     for (const z of [-3.5, 0, 3.5]) { addBox(cx + 2.5, cz + z, 6, 1.1, 1.9, { color:'#7c8a96', metal:0.4 }); for (let k = 0; k < 4; k++) deco(BOXG, dark, [5.6, 0.04, 1.12], [cx + 2.5, 0.45 + k * 0.45, cz + z]); }
     addSign(ROOMS.archive, cx + 4, cz - 7.75, 0, true); ceilPanel(cx, cz, 1, ROOMS.archive.light, 1.0); }
-  { const cx = -8, cz = -8; pillar(cx + 2, cz - 3); pillar(cx + 5, cz + 3); barrier(cx - 1, cz + 1, 3, 0.6, 1.2); ceilPanel(cx, cz, 0); }
+  { const cx = -8, cz = -8; pillar(cx + 2, cz - 3); pillar(cx + 5, cz + 3); barrier(cx - 1, cz + 1, 3, 0.6, COVER_H); ceilPanel(cx, cz, 0); }
   { const cx = 8, cz = -8;
     for (const x of [-3, 3]) { deco(CYL, metal, [0.95, 0.3, 0.95], [cx + x, 0.15, cz - 4]); deco(CYL, metal, [0.95, 0.3, 0.95], [cx + x, 3.25, cz - 4]); deco(CYL, glow('#4fd87a'), [0.72, 2.6, 0.72], [cx + x, 1.7, cz - 4]);
       const tank = deco(CYL, glass, [0.9, 2.8, 0.9], [cx + x, 1.7, cz - 4]); worldMeshes.push(tank); solidDeco(cx + x, cz - 4, 1.8, 1.8, 3.4); }
@@ -882,9 +886,9 @@ function buildRooms44() {
     crate(cx - 2, cz + 3); crate(cx + 2, cz + 4, 1.4); addBox(cx - 1, cz - 2, 2.4, 1.2, 1.0, { color:'#5d6b3a' });
     addSign(ROOMS.armory, cx + 2, cz + 7.75, Math.PI, true); ceilPanel(cx, cz, 1, ROOMS.armory.light, 1.0); }
   // 3행: 창고, 중앙 홀, 동쪽 통로, 의료 보급실
-  { const cx = -24, cz = 8; crate(cx - 3, cz - 3); crate(cx + 3, cz - 1); crate(cx + 3, cz - 4, 1.4); barrier(cx - 3, cz + 2, 4, 0.6, 1.2); ceilPanel(cx, cz, 0); }
+  { const cx = -24, cz = 8; crate(cx - 3, cz - 3); crate(cx + 3, cz - 1); crate(cx + 3, cz - 4, 1.4); barrier(cx - 3, cz + 2, 4, 0.6, COVER_H); ceilPanel(cx, cz, 0); }
   ceilPanel(-8, 8, 1, '#eaf4ff', 1.1);
-  { const cx = 8, cz = 8; pillar(cx - 3, cz - 2); pillar(cx + 3, cz + 1); barrier(cx, cz - 5, 4, 0.6, 1.2); ceilPanel(cx, cz, 0); }
+  { const cx = 8, cz = 8; pillar(cx - 3, cz - 2); pillar(cx + 3, cz + 1); barrier(cx, cz - 5, 4, 0.6, COVER_H); ceilPanel(cx, cz, 0); }
   { const cx = 24, cz = 8;
     addBox(cx + 7.2, cz - 1, 0.8, 9, 2.4, { color:'#dfe5e8', metal:0.2 });
     for (let r = 0; r < 3; r++) for (let k = 0; k < 6; k++) { const y = 0.5 + r * 0.75, z = cz - 4.5 + k * 1.4; deco(BOXG, white, [0.35, 0.3, 0.5], [cx + 6.65, y, z]); deco(BOXG, glow('#d8323a'), [0.37, 0.08, 0.3], [cx + 6.65, y, z]); deco(BOXG, glow('#d8323a'), [0.37, 0.22, 0.08], [cx + 6.65, y, z]); }
@@ -892,7 +896,7 @@ function buildRooms44() {
     addSign(ROOMS.medical, cx, cz - 7.75, 0, true); ceilPanel(cx, cz, 1, ROOMS.medical.light, 1.1); }
   // 4행: 하역장, 입구 홀(출발), 동쪽 보관 창고, 적재실
   { const cx = -24, cz = 24; addBox(cx - 3, cz + 1, 3, 6, 2.6, { map:containerTex('#35607a') }); crate(cx + 3, cz - 4); crate(cx + 4, cz + 3, 1.4); ceilPanel(cx, cz, 0); }
-  { const cx = -8, cz = 24; barrier(cx - 2, cz - 3, 3, 0.6, 1.2); barrier(cx + 4, cz - 3, 4, 0.6, 1.2); ceilPanel(cx, cz, 1, '#eaf4ff', 1.0); }
+  { const cx = -8, cz = 24; barrier(cx - 2, cz - 3, 3, 0.6, COVER_H); barrier(cx + 4, cz - 3, 4, 0.6, COVER_H); ceilPanel(cx, cz, 1, '#eaf4ff', 1.0); }
   { const cx = 8, cz = 24; for (const x of [-4, 0, 4]) labRack(cx + x, cz + 2, 1, 4); crate(cx - 2, cz - 4); ceilPanel(cx, cz, 0); }
   { const cx = 24, cz = 24; addBox(cx + 3, cz + 2, 3, 6, 2.6, { map:containerTex('#7a4a2a') }); crate(cx - 3, cz - 3); crate(cx - 4, cz + 4, 1.4); ceilPanel(cx, cz, 0); }
 }
@@ -1003,7 +1007,7 @@ const MAPS = {
       barrier(-12, -10, 5, 0.8); barrier(12, 10, 5, 0.8); barrier(-24, 20, 0.8, 5); barrier(24, -20, 0.8, 5); barrier(6, -24, 5, 0.8); barrier(-6, 24, 5, 0.8);
       PLAT = { minX:-7, maxX:7, minZ:-7, maxZ:7, h:3.2 };
       addPlatform(PLAT);
-      barrier(-3.5, 0, 0.8, 4, 1.1, 3.2); barrier(3.5, 0, 0.8, 4, 1.1, 3.2);
+      barrier(-3.5, 0, 0.8, 4, COVER_H, 3.2); barrier(3.5, 0, 0.8, 4, COVER_H, 3.2);
       crate(-5.2, -5.2, 1.4, 3.2); crate(5.2, 5.2, 1.4, 3.2);
       addRamp(0, -7, -15, 4, 3.2); addRamp(0, 7, 15, 4, 3.2);
       for (const [x, z, l] of [[-40, -40, 1], [40, 40, 1], [40, -40, 0], [-40, 40, 0]]) addLamp(x, z, l);
@@ -1062,7 +1066,7 @@ const MAPS = {
       PLAT = { minX:-BX, maxX:BX, minZ:Z(276), maxZ:Z(300), h:3.2 };
       addPlatform(PLAT);
       addRamp(0, Z(276), Z(267), 4, 3.2);
-      barrier(-(BX + 2.5) / 2, Z(276.5), BX - 2.5, 0.6, 1.1, 3.2); barrier((BX + 2.5) / 2, Z(276.5), BX - 2.5, 0.6, 1.1, 3.2);
+      barrier(-(BX + 2.5) / 2, Z(276.5), BX - 2.5, 0.6, COVER_H, 3.2); barrier((BX + 2.5) / 2, Z(276.5), BX - 2.5, 0.6, COVER_H, 3.2);
       crate(-(BX - 3), Z(285), 1.4, 3.2); crate(BX - 3, Z(285), 1.4, 3.2);
       const pillar = (x, z) => addBox(x, z, 2, 2, 6, { map:wallTex, color:'#bdb3a2' });
       // 거점: 5.5m 담장으로 둘러싸 멀리서는 안이 보이지 않음.
@@ -1119,6 +1123,27 @@ const MAPS = {
       // 4구간: 3거점 ~ 끝, 탈출구 3
       barrier(X(0), Z(-225), 8, 0.8, 1.3); crate(X(-11), Z(-235)); crate(X(11), Z(-241));
       barrier(X(-6), Z(-258), 8, 0.8, 1.3); pillar(X(10), Z(-268));
+      // 추가 엄폐물: 통로 구간마다 약 16m 간격으로 배치. 고정된 난수라 매번 같은 자리에 놓임
+      // 기존 구조물과는 2.2m 이상, 전리품 상자, 탈출구, 미니게임 스폰 지점과는 3m 이상 띄움
+      { let seed = 20261006; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+        const keep = [...RAID.canyon.loot.map(l => [l[0], l[1]]), ...RAID.canyon.ext.map(e => [e.x, e.z]), [-6, Z(223)], [0, Z(222)], [6, Z(223)], [-9, Z(241)], [9, Z(241)]];
+        const free = (x, z, w, d) => {
+          if (Math.abs(x) + w / 2 > BX - 1.5) return false;
+          for (const c of colliders) if (!c.plat && x - w / 2 - 2.2 < c.maxX && x + w / 2 + 2.2 > c.minX && z - d / 2 - 2.2 < c.maxZ && z + d / 2 + 2.2 > c.minZ) return false;
+          for (const k of keep) if (Math.abs(k[0] - x) < w / 2 + 3 && Math.abs(k[1] - z) < d / 2 + 3) return false;
+          return true;
+        };
+        for (let i = 1; i < CANYON_NEW.length - 1; i += 2) {
+          for (let z = CANYON_NEW[i] + 10; z < CANYON_NEW[i + 1] - 10; z += 16) {
+            const x = Math.round((rnd() * 2 - 1) * (BX - 5) * 2) / 2, zz = Math.round((z + (rnd() - 0.5) * 6) * 2) / 2, t = rnd(), r2 = rnd();
+            if (t < 0.4) { const w = 5 + Math.floor(r2 * 3); if (free(x, zz, w, 0.8)) barrier(x, zz, w, 0.8); }        // 가로 방벽
+            else if (t < 0.55) { if (free(x, zz, 0.8, 5)) barrier(x, zz, 0.8, 5); }                                   // 세로 방벽
+            else if (t < 0.8) { if (free(x, zz, 4, 2)) { crate(x - 1, zz); crate(x + 1.05, zz, 1.4); } }              // 큰 상자와 작은 상자
+            else if (t < 0.92) { if (free(x, zz, 2, 2)) pillar(x, zz); }                                             // 기둥
+            else if (free(x, zz, 3.2, 8)) addBox(x, zz, 3.2, 8, CH, { map:r2 < 0.5 ? steel : rust });                // 컨테이너
+          }
+        }
+      }
       for (const [x, z, l] of [[-13, 250, 1], [13, 150, 1], [-13, 80, 1], [13, 10, 1], [-13, -100, 1], [13, -160, 1], [-13, -250, 1], [13, 292, 0], [-13, 292, 0]]) addLamp(Math.sign(x) * (BX - 1), Z(z), l);
       // 웨이브 미니게임 스폰 지점: 출발 지점과의 거리는 예전과 같게 유지
       SPAWNS = [[-6, Z(223)], [0, Z(222)], [6, Z(223)], [-9, Z(241)], [9, Z(241)]];
@@ -1488,6 +1513,14 @@ const VM_BASE = new THREE.Vector3(0.26, -0.27, -0.45);
 let state = 'title', lockMode = false;
 const P = { pos:new THREE.Vector3(), vy:0, yaw:0, pitch:0, onGround:true, hp:100, ar:0, bob:0, feet:0 };
 let laserOn = true, lightOn = true;
+// 앉기: C 로 켜고 끔. 눈높이가 낮아져 낮은 엄폐물 뒤에 숨을 수 있고, 느려지는 대신 덜 발견됨
+let crouch = false, crouchT = 0;
+// 앉으면 눈높이 1.05m, 머리 판정 윗선 1.3m. 낮은 엄폐물 높이(COVER_H 1.3m)에 맞춘 값
+const CROUCH_DROP = 0.65;
+function setCrouch(v) {
+  if (state !== 'play') return;
+  crouch = v; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.toggle('lit', crouch));
+}
 let leanT = 0, touchLean = 0;
 const EYE = new THREE.Vector3();
 let chargeT = 0, railRelease = false, zoomCur = 1, recoilPitch = 0, recoilYaw = 0, shotAgo = 9;
@@ -1510,7 +1543,8 @@ function resetGame() {
   enemies = []; shots = []; pickups = []; parts = []; tracers = []; nades = []; frags = []; rings = []; shakeAmt = 0; fragCd = 0;
   P.pos.set(START.x, START.y, START.z); P.vy = 0; P.yaw = START.yaw; P.pitch = 0; P.maxHp = 100; P.arMax = 100; P.arAbs = 0.5; P.spd = 1; P.adsMul = 1; P.repMul = 1; P.healMul = 1; P.defMul = 1; P.hp = 100; P.ar = 25; P.onGround = true; P.calm = 0;
   ammo = WEAPONS.map(w => ({ mag:w.mag, res:w.reserve }));
-  slot = Math.max(0, loadout.findIndex(w => w)); weapon = loadout[slot]; aiming = false; aimT = 0; fireCd = 0; recoilPitch = 0; recoilYaw = 0; leanT = 0; touchLean = 0; reloading = 0; switchT = 0; recoil = 0; kick = 0; dmgFlash = 0;
+  slot = Math.max(0, loadout.findIndex(w => w)); weapon = loadout[slot]; aiming = false; aimT = 0; fireCd = 0; recoilPitch = 0; recoilYaw = 0; leanT = 0; touchLean = 0; reloading = 0; switchT = 0; recoil = 0; kick = 0; dmgFlash = 0; crouch = false; crouchT = 0;
+  document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.remove('lit'));
   score = 0; kills = 0; wave = 0; waveState = 'break'; waveT = 2.5; queue = []; spawnT = 0;
   refreshSlots();
   setWeapon(slot, true);
@@ -1531,6 +1565,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Digit1') setWeapon(0); if (e.code === 'Digit2') setWeapon(1); if (e.code === 'Digit3') setWeapon(2);
   if (e.code === 'Digit4' && mode === 'raid') useMed();
   if (e.code === 'KeyT') toggleLaser();
+  if (e.code === 'KeyC') setCrouch(!crouch);
   if (e.code === 'KeyF' && mode === 'raid') interact();
   if (e.code === 'KeyH' && mode === 'raid') useMed();
   if (e.code === 'KeyG' && mode === 'raid') throwFrag();
@@ -1651,6 +1686,7 @@ if (isTouch) {
       if (t === 'swap') cycleWeapon(1);
       if (t === 'aim') { aiming = !aiming; b.classList.toggle('lit', aiming); }
       if (t === 'laser') toggleLaser();
+      if (t === 'crouch') setCrouch(!crouch);
       if (t === 'use' && mode === 'raid') interact();
       if (t === 'heal' && mode === 'raid') useMed();
       if (t === 'frag' && mode === 'raid') throwFrag();
@@ -2250,7 +2286,7 @@ function alertAround(pos, r) {
   if (mode === 'raid' && raid && raid.cfg && raid.cfg.alertR && r < raid.cfg.alertR) r = raid.cfg.alertR;
   for (const o of enemies) if (!o.dead && !o.alert && Math.hypot(o.g.position.x - pos.x, o.g.position.z - pos.z) < r) { o.alert = true; o.cd = rand(0.8, 1.6); }
 }
-function seeMul() { return laserActive() || lightActive() ? 1 : 0.7; }
+function seeMul() { return (laserActive() || lightActive() ? 1 : 0.7) * (1 - crouchT * 0.25); }
 function updateEnemies(dt) {
   if (NAV) updateNav(dt);
   const eye = EYE;
@@ -2295,7 +2331,7 @@ function updateEnemies(dt) {
         const from0 = g.position.clone().add(tmpV2.set(0, e.type === 'drone' ? 0 : e.type === 'snp' ? 1.9 : e.type === 'bguard' ? 2.3 : e.type === 'jugg' ? 2.8 : e.type === 'boss' ? 3.2 : e.type === 'brute' ? 2.4 : 1.6, 0));
         const running = (keys.ShiftLeft || keys.ShiftRight) && P.onGround;
         const sees = d < AI.see * seeMul() * 0.6 && (facing > 0.42 || e.type === 'drone' && facing > 0) && losTo(from0, EYE);
-        const hears = d < 5 || (running && d < 12);
+        const hears = d < (crouch ? 3 : 5) || (running && d < 12);
         if (sees || hears) {
           e.alert = true; e.lost = 0; alertAround(g.position, 12); e.cd = rand(0.6, 1.2);
           if (e.type === 'boss' || e.type === 'jugg') say(`${e.name}이(가) 당신을 발견했습니다`);
@@ -2481,7 +2517,7 @@ function updateEnemies(dt) {
 }
 
 // ---------- 플레이어 ----------
-function jump() { if (P.onGround && state === 'play') { P.vy = 7.4; P.onGround = false; } }
+function jump() { if (P.onGround && state === 'play') { if (crouch) setCrouch(false); P.vy = 7.4; P.onGround = false; } }
 function hurtPlayer(d) {
   if (state !== 'play' && state !== 'inv') return;
   d *= P.defMul || 1;
@@ -2507,7 +2543,9 @@ function updatePlayer(dt) {
   ix += touchMove.x; iz += touchMove.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
   const sprint = (keys.ShiftLeft || keys.ShiftRight) && iz < 0 && !aiming;
-  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25);
+  if (sprint && crouch) setCrouch(false);
+  crouchT += ((crouch ? 1 : 0) - crouchT) * Math.min(1, dt * 10);
+  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5);
   const s = Math.sin(P.yaw), c = Math.cos(P.yaw);
   const vx = (ix * c + iz * s) * speed, vz = (-ix * s + iz * c) * speed;
   P.feet = P.pos.y - 1.7;
@@ -2528,7 +2566,7 @@ function updatePlayer(dt) {
     if (!insideSolid(tmpV.set(P.pos.x + rx * lo * 1.3, P.pos.y - 0.1, P.pos.z + rz * lo * 1.3))) break;
     lo *= 0.5;
   }
-  EYE.set(P.pos.x + rx * lo, P.pos.y - Math.abs(lo) * 0.15, P.pos.z + rz * lo);
+  EYE.set(P.pos.x + rx * lo, P.pos.y - Math.abs(lo) * 0.15 - crouchT * CROUCH_DROP, P.pos.z + rz * lo);
   camera.position.set(EYE.x, EYE.y + (moving ? Math.sin(P.bob) * 0.05 : 0), EYE.z);
   if (shakeAmt > 0) { camera.position.x += rand(-shakeAmt, shakeAmt); camera.position.y += rand(-shakeAmt, shakeAmt); shakeAmt = Math.max(0, shakeAmt - dt * 0.9); }
   shotAgo += dt;
@@ -2608,9 +2646,9 @@ function updateShots(dt) {
     for (let k = 0; k < steps && s.t > 0; k++) {
       s.m.position.addScaledVector(s.v, dt / steps);
       const p = s.m.position;
-      const cy = clamp(p.y, P.pos.y - 1.5, P.pos.y - 0.35);
+      const cy = clamp(p.y, P.pos.y - 1.5, P.pos.y - 0.35 - crouchT * CROUCH_DROP);
       const bodyHit = Math.hypot(p.x - P.pos.x, p.z - P.pos.z) < 0.45 && Math.abs(p.y - cy) < 0.3;
-      const headHit = Math.hypot(p.x - EYE.x, p.y - EYE.y, p.z - EYE.z) < 0.4;
+      const headHit = Math.hypot(p.x - EYE.x, p.y - EYE.y, p.z - EYE.z) < 0.4 - crouchT * 0.15;
       if (bodyHit || headHit) { hurtPlayer(s.dmg); s.t = 0; burst(p, '#ffddaa', 4, 2); }
       else if (insideSolid(p)) { s.t = 0; burst(p, '#b8e8ff', 3, 2); }
     }
