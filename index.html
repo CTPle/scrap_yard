@@ -335,7 +335,8 @@ body:not(.is-raid) .raidonly{ display:none; }
     <div id="charge"><b id="chargeFill"></b></div>
     <div id="msg"></div>
     <div id="lockTip" hidden>
-      <p>이 화면에서는 마우스 고정이 막혀 있어 커서가 밖으로 나갈 수 있습니다. 방향키나 화면 가장자리로 시점을 돌릴 수 있고, 새 탭에서 열면 마우스가 정상적으로 고정됩니다.</p>
+      <p>마우스 고정 없이 조작 중입니다. 마우스를 움직이면 시점이 돌고, 커서를 화면 가장자리에 대면 계속 돕니다. 방향키로도 돌릴 수 있습니다.</p>
+      <button type="button" id="relockBtn">마우스 고정 다시 쓰기</button>
       <button type="button" id="newTabBtn">새 탭에서 열기</button>
     </div>
     <div class="vitals">
@@ -506,7 +507,7 @@ body:not(.is-raid) .raidonly{ display:none; }
     <div class="card">
       <h1>일시정지</h1>
       <p id="pauseMsg">화면을 클릭하면 이어서 진행합니다.</p>
-      <div class="hbtns"><button class="primary" id="resumeBtn">계속하기</button><button class="opt" id="freeBtn" hidden>마우스 고정 없이 계속</button></div>
+      <div class="hbtns"><button class="primary" id="resumeBtn">계속하기</button><button class="opt" id="freeBtn">마우스 고정 없이 계속 (가상 머신, 원격 접속용)</button></div>
     </div>
   </div>
 
@@ -603,6 +604,15 @@ wScene.add(wCam);
 wScene.add(new THREE.HemisphereLight('#c9d6e6', '#3a3128', 0.9));
 const wKey = new THREE.DirectionalLight('#ffe0b8', 0.8); wKey.position.set(1, 2, 1); wScene.add(wKey);
 
+// 저사양 모드: 그래픽 가속이 없는 환경(가상 머신 등)에서 해상도와 그림자를 낮춰 조작이 밀리지 않게 함
+// 단계 0 보통, 1 해상도 60% + 그림자 끔, 2 해상도 40%
+let lowSpec = 0;
+function setLowSpec(n) {
+  lowSpec = n;
+  renderer.setPixelRatio(n === 0 ? Math.min(devicePixelRatio, 2) : n === 1 ? 0.6 : 0.4);
+  if (typeof sun !== 'undefined' && n > 0) sun.castShadow = false;
+  if (typeof resize === 'function') resize();
+}
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
@@ -1166,7 +1176,7 @@ function buildLevel(key) {
   const L = Object.assign({ bg:'#262d39', hemi:0.6, sky:'#9fb3c8', ground:'#3a3128', sun:0.95 }, M.light || {});
   scene.background.set(L.bg); scene.fog.color.set(L.bg);
   hemi.intensity = L.hemi; hemi.color.set(L.sky); hemi.groundColor.set(L.ground); sun.intensity = L.sun;
-  sun.castShadow = L.sun > 0;
+  sun.castShadow = L.sun > 0 && !lowSpec;
   buildNav();
   scene.fog.near = M.fog[0]; scene.fog.far = M.fog[1];
   sun.position.set(...M.sun);
@@ -1594,7 +1604,25 @@ function look(dx, dy, s = SENS) {
   P.yaw -= dx * s * sensMul * z; P.pitch = clamp(P.pitch - dy * s * sensMul * z, -1.45, 1.45);
 }
 let lockWorked = false, mouseX = 0.5, mouseY = 0.5, mouseIn = false;
+// 고정 없이 조작: 가상 머신이나 원격 접속처럼 마우스 고정이 되긴 하지만 움직임 값이 엉뚱하게 들어오는 환경용.
+// 마우스를 움직인 만큼 시점이 돌고, 커서가 화면 가장자리에 닿으면 계속 돎. 한 번 켜지면 다음에도 유지
+let forceFree = false, lastCX = null, lastCY = null, lockMoved = false, zeroMoves = 0, bigMoves = 0, bigT = 0;
+try { forceFree = localStorage.getItem('scrapyard-nolock') === '1'; } catch (_) {}
+function setFree(on, why) {
+  forceFree = on; try { localStorage.setItem('scrapyard-nolock', on ? '1' : '0'); } catch (_) {}
+  if (on) {
+    lockMode = false; lockWorked = false; lastCX = null;
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (!isTouch) $('lockTip').hidden = false;
+    if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
+    if (why && state === 'play') say(why);
+  } else {
+    $('lockTip').hidden = true;
+    if (state === 'play' && !isTouch) { lockMode = true; requestLock(); }
+  }
+}
 function requestLock() {
+  if (forceFree) { lockMode = false; if (!isTouch) $('lockTip').hidden = false; return; }
   if (isTouch || !canvas.requestPointerLock) { lockFailed(); return; }
   try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(lockFailed); } catch (_) { lockFailed(); }
   setTimeout(() => { if (!lockWorked && lockMode && state === 'play' && document.pointerLockElement !== canvas) lockFailed(); }, 900);
@@ -1612,14 +1640,24 @@ function lockFailed() {
 document.addEventListener('mousemove', e => {
   mouseX = e.clientX / innerWidth; mouseY = e.clientY / innerHeight; mouseIn = true;
   if (state !== 'play' || isTouch) return;
-  if (document.pointerLockElement === canvas) look(e.movementX, e.movementY);
-  else if (!lockMode && dragInfo) {
-    dragInfo.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
-    if (dragInfo.moved > 6) { mouseDown = false; look(e.movementX, e.movementY, SENS * 1.4); }
+  if (document.pointerLockElement === canvas) {
+    const mx = e.movementX || 0, my = e.movementY || 0;
+    // 고정은 됐는데 움직임이 계속 0 이거나 한 번에 화면의 1/3 이상씩 튀면 가상 머신으로 보고 고정 없이 조작으로 바꿈
+    if (mx || my) { if (Math.abs(mx) < 300 && Math.abs(my) < 300) lockMoved = true; }
+    else if (!lockMoved && ++zeroMoves >= 15) { setFree(true, '이 환경에서는 마우스 고정이 동작하지 않아 고정 없이 조작합니다'); return; }
+    if (Math.abs(mx) > innerWidth * 0.33 || Math.abs(my) > innerHeight * 0.33) {
+      const now = performance.now(); if (now - bigT > 2000) { bigT = now; bigMoves = 0; }
+      if (++bigMoves >= 5) { setFree(true, '마우스 움직임이 튀어 고정 없이 조작합니다'); }
+      return;
+    }
+    look(mx, my);
+  } else if (!lockMode) {
+    if (lastCX !== null) look(e.clientX - lastCX, e.clientY - lastCY, SENS * 1.4);
+    lastCX = e.clientX; lastCY = e.clientY;
   }
 });
-document.addEventListener('mouseleave', () => { mouseIn = false; });
-addEventListener('mouseout', e => { if (!e.relatedTarget) mouseIn = false; });
+document.addEventListener('mouseleave', () => { mouseIn = false; lastCX = null; });
+addEventListener('mouseout', e => { if (!e.relatedTarget) { mouseIn = false; lastCX = null; } });
 let dragInfo = null;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', e => {
@@ -1632,7 +1670,7 @@ canvas.addEventListener('mousedown', e => {
   if (state !== 'play' || isTouch || e.button !== 0) return;
   if (document.pointerLockElement !== canvas) {
     if (lockMode) { requestLock(); return; }
-    requestLock();
+    if (!forceFree) requestLock();
   }
   mouseDown = true; firePressed = true;
   if (!lockMode) dragInfo = { moved:0 };
@@ -1641,8 +1679,9 @@ addEventListener('mouseup', () => { mouseDown = false; dragInfo = null; });
 
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas) {
-    lockWorked = true; lockMode = true; $('lockTip').hidden = true;
-    if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; $('freeBtn').hidden = true; }
+    if (forceFree) { document.exitPointerLock(); return; }
+    lockWorked = true; lockMode = true; lockMoved = false; zeroMoves = 0; bigMoves = 0; $('lockTip').hidden = true;
+    if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
   } else if (state === 'play' && lockMode) {
     state = 'paused'; $('pauseOv').hidden = false; $('pauseMsg').textContent = '화면을 클릭하면 이어서 진행합니다.'; mouseDown = false; for (const k in keys) keys[k] = false;
   }
@@ -2534,7 +2573,7 @@ function updatePlayer(dt) {
   let ty = 0, tp = 0;
   if (keys.ArrowLeft) ty += 1; if (keys.ArrowRight) ty -= 1;
   if (keys.ArrowUp) tp += 1; if (keys.ArrowDown) tp -= 1;
-  if (!lockMode && !isTouch && mouseIn && !dragInfo) {
+  if (!lockMode && !isTouch && mouseIn) {
     const E = 0.1;
     if (mouseX < E) ty += (E - mouseX) / E; else if (mouseX > 1 - E) ty -= (mouseX - (1 - E)) / E;
     if (mouseY < E) tp += (E - mouseY) / E * 0.7; else if (mouseY > 1 - E) tp -= (mouseY - (1 - E)) / E * 0.7;
@@ -4175,13 +4214,11 @@ function resume() {
     if (my !== resumeTry || state !== 'paused' || document.pointerLockElement === canvas) return;
     $('pauseOv').hidden = false;
     $('pauseMsg').textContent = '브라우저가 마우스 고정을 허용하지 않았습니다. 잠시 뒤 다시 누르거나, 고정 없이 계속하십시오.';
-    $('freeBtn').hidden = false;
   }, 900);
 }
 function resumeFree() {
-  lockMode = false; resumeTry++;
-  $('pauseOv').hidden = true; $('freeBtn').hidden = true; state = 'play';
-  if (!isTouch) $('lockTip').hidden = false;
+  resumeTry++; setFree(true);
+  $('pauseOv').hidden = true; state = 'play';
 }
 function gameOver() {
   if (mode === 'raid') { raidEnd(false, '쓰러졌습니다'); return; }
@@ -4266,15 +4303,29 @@ if (isTouch) {
 $('muteBtn').addEventListener('click', toggleMute);
 let inFrame = true; try { inFrame = window.top !== window.self; } catch (_) {}
 if (!inFrame) $('newTabBtn').hidden = true;
+$('relockBtn').addEventListener('click', e => { e.stopPropagation(); setFree(false); });
+if (isTouch) $('freeBtn').hidden = true;
 $('newTabBtn').addEventListener('click', () => { window.open(location.href, '_blank', 'noopener'); });
 
 // ---------- 루프 ----------
 resetGame();
 
-let last = performance.now(), idle = 0;
+// 소프트웨어 렌더러(그래픽 가속 없음)면 처음부터 저사양으로 시작
+try {
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  if (/llvmpipe|swiftshader|software|softpipe|svga3d|vmware|virtualbox/i.test(name)) setLowSpec(1);
+} catch (_) {}
+let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0;
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+  const raw = now - last;
+  const dt = Math.min(0.05, Math.max(0, raw / 1000)); last = now;
+  // 최근 90프레임 평균이 초당 24프레임보다 느리면 한 단계씩 낮춤
+  if (lowSpec < 2 && raw < 1000 && (state === 'play' || state === 'title')) {
+    slowAcc += raw; slowN++;
+    if (slowN >= 90) { if (slowAcc / slowN > 42) { setLowSpec(lowSpec + 1); if (state === 'play') say('화면이 느려 저사양 모드로 바꿨습니다'); } slowAcc = 0; slowN = 0; }
+  }
   try {
   if (state === 'play' || state === 'inv') {
     updatePlayer(dt); updateWeapon(dt); updateLaser(); updateEnemies(dt); updateShots(dt); updateENades(dt); updateNades(dt); updatePickups(dt); if (mode === 'wave') updateWaves(dt); else updateRaid(dt); updateFx(dt); updateHud(dt);
