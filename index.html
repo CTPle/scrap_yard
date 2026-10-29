@@ -64,10 +64,7 @@ body:not(.is-raid) #consum{ display:none; }
 .top b{ color:var(--ink); font-size:20px; margin-left:6px; }
 #msg{ position:absolute; top:26%; left:0; right:0; text-align:center; font-size:clamp(20px,3.2vw,34px); font-weight:800; color:var(--ink); opacity:0; transition:opacity .25s; }
 #reloadTip{ position:absolute; top:calc(50% + 34px); left:0; right:0; text-align:center; font-size:13px; color:var(--amber); opacity:0; }
-#lockTip{ position:absolute; left:calc(14px + env(safe-area-inset-left,0px)); top:calc(52px + env(safe-area-inset-top,0px)); max-width:300px; background:rgba(18,21,27,.78); border-left:3px solid var(--amber); padding:10px 12px; pointer-events:auto; text-shadow:none; }
-#lockTip[hidden]{ display:none; }
-#lockTip p{ margin:0 0 8px; font-size:12.5px; line-height:1.55; color:var(--ink); }
-#lockTip button{ font:inherit; font-size:12.5px; font-weight:700; background:var(--amber); color:#1c1408; border:0; padding:5px 10px; cursor:pointer; }
+
 #scope{ position:absolute; inset:0; display:none; background:radial-gradient(circle at center, rgba(0,0,0,0) 0, rgba(0,0,0,0) 36vmin, rgba(0,0,0,.25) 36.4vmin, #000 37vmin); }
 #scope i{ position:absolute; background:#0b0b0b; box-shadow:0 0 0 1px rgba(255,255,255,.55), 0 0 4px rgba(255,255,255,.35); }
 #scope .h{ top:50%; height:2px; margin-top:-1px; }
@@ -334,11 +331,6 @@ body:not(.is-raid) .raidonly{ display:none; }
     <div id="reloadTip">재장전 중</div>
     <div id="charge"><b id="chargeFill"></b></div>
     <div id="msg"></div>
-    <div id="lockTip" hidden>
-      <p>이 환경에 맞춘 마우스 조작입니다. 마우스를 움직이면 시점이 돌고, 화면 끝까지 밀면 그 방향으로 계속 돕니다. 방향키로도 돌릴 수 있습니다. Esc로 일시정지합니다.</p>
-      <button type="button" id="relockBtn">마우스 고정 다시 쓰기</button>
-      <button type="button" id="newTabBtn">새 탭에서 열기</button>
-    </div>
     <div class="vitals">
       <div class="vital"><div class="label">체력</div><div class="val num" id="hpTxt">100</div><div class="bar"><b id="hpBar"></b></div></div>
       <div class="vital"><div class="label">방어구</div><div class="val num" id="arTxt">0</div><div class="bar"><b id="arBar"></b></div></div>
@@ -409,7 +401,7 @@ body:not(.is-raid) .raidonly{ display:none; }
           <dt>방향키</dt><dd>시점 회전 (마우스 대신 사용 가능)</dd>
           <dt>Space</dt><dd>점프 (낮은 장애물 위로 올라갈 수 있음)</dd>
           <dt>R</dt><dd>재장전</dd>
-          <dt>C</dt><dd>앉기, 일어서기 (낮은 엄폐물 뒤에 숨고 덜 발견됨. 이동은 느려지며 달리거나 점프하면 일어섬)</dd>
+          <dt>왼쪽 Ctrl</dt><dd>앉기, 일어서기 (낮은 엄폐물 뒤에 숨고 덜 발견됨. 이동은 느려지며 달리거나 점프하면 일어섬)</dd>
           <dt>Q / E</dt><dd>누르고 있는 동안 왼쪽, 오른쪽으로 몸 기울이기 (엄폐 사격)</dd>
           <dt>F / Tab / H</dt><dd>상자 열기, 문 열기 / 가방 보기 / 치료 키트 사용</dd>
           <dt>G</dt><dd>수류탄 던지기, 2초 뒤 폭발</dd>
@@ -507,7 +499,7 @@ body:not(.is-raid) .raidonly{ display:none; }
     <div class="card">
       <h1>일시정지</h1>
       <p id="pauseMsg">화면을 클릭하면 이어서 진행합니다.</p>
-      <div class="hbtns"><button class="primary" id="resumeBtn">계속하기</button><button class="opt" id="freeBtn">마우스 고정 없이 계속 (가상 머신, 원격 접속용)</button></div>
+      <div class="hbtns"><button class="primary" id="resumeBtn">계속하기</button><button class="opt" id="newTabBtn" hidden>새 탭에서 열기</button></div>
     </div>
   </div>
 
@@ -604,7 +596,7 @@ wScene.add(wCam);
 wScene.add(new THREE.HemisphereLight('#c9d6e6', '#3a3128', 0.9));
 const wKey = new THREE.DirectionalLight('#ffe0b8', 0.8); wKey.position.set(1, 2, 1); wScene.add(wKey);
 
-// 저사양 모드: 그래픽 가속이 없는 환경(가상 머신 등)에서 해상도와 그림자를 낮춰 조작이 밀리지 않게 함
+// 저사양 모드: 화면이 느린 환경에서 해상도와 그림자를 낮춰 조작이 밀리지 않게 함
 // 단계 0 보통, 1 해상도 60% + 그림자 끔, 2 해상도 40%
 let lowSpec = 0;
 function setLowSpec(n) {
@@ -1566,18 +1558,18 @@ let mouseDown = false, firePressed = false, touchMove = { x:0, y:0 };
 addEventListener('keydown', e => {
   if (e.code === 'KeyM') { toggleMute(); return; }
   if (e.code.startsWith('Arrow') || e.key === 'Alt') e.preventDefault();
+  // 앉기(Ctrl)를 누른 채 다른 키를 눌러도 브라우저 단축키(Ctrl+S, Ctrl+D 등)가 실행되지 않게 막음
+  if (state === 'play' && e.ctrlKey) e.preventDefault();
   if (state === 'inv' && (e.code === 'Tab' || e.code === 'Escape' || e.code === 'KeyF')) { e.preventDefault(); closeInv(); return; }
   if (state === 'play' && mode === 'raid' && e.code === 'Tab') { e.preventDefault(); openInv(null); return; }
-  if (state === 'play' && e.code === 'Escape' && !lockMode && !isTouch) { state = 'paused'; $('pauseOv').hidden = false; $('pauseMsg').textContent = '화면을 클릭하면 이어서 진행합니다.'; mouseDown = false; for (const k in keys) keys[k] = false; return; }
   if (state !== 'play') return;
-  lockInput = true;
   keys[e.code] = true;
   if (e.code === 'Space') { e.preventDefault(); jump(); }
   if (e.code === 'KeyR') startReload();
   if (e.code === 'Digit1') setWeapon(0); if (e.code === 'Digit2') setWeapon(1); if (e.code === 'Digit3') setWeapon(2);
   if (e.code === 'Digit4' && mode === 'raid') useMed();
   if (e.code === 'KeyT') toggleLaser();
-  if (e.code === 'KeyC') setCrouch(!crouch);
+  if (e.code === 'ControlLeft' && !e.repeat) setCrouch(!crouch);
   if (e.code === 'KeyF' && mode === 'raid') interact();
   if (e.code === 'KeyH' && mode === 'raid') useMed();
   if (e.code === 'KeyG' && mode === 'raid') throwFrag();
@@ -1605,71 +1597,25 @@ function look(dx, dy, s = SENS) {
   const z = camera.fov / 75;
   P.yaw -= dx * s * sensMul * z; P.pitch = clamp(P.pitch - dy * s * sensMul * z, -1.45, 1.45);
 }
-let lockWorked = false, mouseX = 0.5, mouseY = 0.5, mouseIn = false;
-// 고정 없이 조작: 가상 머신이나 원격 접속처럼 마우스 고정이 되긴 하지만 움직임 값이 엉뚱하게 들어오는 환경용.
-// 마우스를 움직인 만큼 시점이 돌고, 커서가 화면 가장자리에 닿으면 계속 돎. 한 번 켜지면 다음에도 유지
-let forceFree = false, freeChosen = false, lastCX = null, lastCY = null, lockMoved = false, zeroMoves = 0, bigMoves = 0, bigT = 0, lockIdle = 0, lockInput = false, tipTimer = 0, lockEver = false;
-try { const v = localStorage.getItem('scrapyard-nolock'); if (v !== null) { freeChosen = true; forceFree = v === '1'; } } catch (_) {}
-// persist 가 false 면(자동 전환) 이번 접속에만 적용
-function setFree(on, why, persist = true) {
-  forceFree = on;
-  if (persist) { freeChosen = true; try { localStorage.setItem('scrapyard-nolock', on ? '1' : '0'); } catch (_) {} }
-  $('freeBtn').textContent = on ? '마우스 고정 다시 쓰기' : '마우스 고정 없이 계속 (가상 머신, 원격 접속용)';
-  if (on) {
-    lockMode = false; lockWorked = false; lastCX = null;
-    if (document.pointerLockElement) document.exitPointerLock();
-    showFreeTip();
-    if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
-    if (why && state === 'play') say(why);
-  } else {
-    $('lockTip').hidden = true; lockMode = !isTouch;
-    if (state === 'play' && !isTouch) requestLock();
-  }
-}
-// 안내는 잠깐만 보여 주고 숨김
-function showFreeTip() {
-  if (isTouch) return;
-  $('lockTip').hidden = false; clearTimeout(tipTimer);
-  tipTimer = setTimeout(() => { $('lockTip').hidden = true; }, 8000);
-}
+let lockWorked = false;
 function requestLock() {
-  if (forceFree) { lockMode = false; showFreeTip(); return; }
   if (isTouch || !canvas.requestPointerLock) { lockFailed(); return; }
   try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(lockFailed); } catch (_) { lockFailed(); }
   setTimeout(() => { if (!lockWorked && lockMode && state === 'play' && document.pointerLockElement !== canvas) lockFailed(); }, 900);
 }
+// PC 에서는 항상 마우스를 화면에 고정해서 플레이. 고정이 안 되면 진행하지 않고 일시정지 화면에서 다시 시도
 function lockFailed() {
-  if (lockWorked) {
-    // 잠금이 한 번이라도 됐던 환경이면 일시적인 실패이므로 일시정지 화면에서 다시 시도
-    if (state === 'play' || state === 'paused') { state = 'paused'; $('pauseOv').hidden = false; $('pauseMsg').textContent = '잠시 후 다시 클릭해 주십시오.'; }
-    return;
-  }
-  lockMode = false;
-  if (!isTouch) $('lockTip').hidden = false;
-  if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
+  if (isTouch || state !== 'play' && state !== 'paused') return;
+  state = 'paused'; $('pauseOv').hidden = false; mouseDown = false; for (const k in keys) keys[k] = false;
+  $('pauseMsg').textContent = inFrame && !lockWorked
+    ? '이 화면에서는 마우스를 고정할 수 없습니다. 새 탭에서 열어 주십시오.'
+    : '화면을 클릭하면 마우스를 고정하고 이어서 진행합니다.';
+  $('newTabBtn').hidden = !inFrame;
 }
 document.addEventListener('mousemove', e => {
-  mouseX = e.clientX / innerWidth; mouseY = e.clientY / innerHeight; mouseIn = true;
   if (state !== 'play' || isTouch) return;
-  if (document.pointerLockElement === canvas) {
-    const mx = e.movementX || 0, my = e.movementY || 0;
-    // 고정은 됐는데 움직임이 계속 0 이거나 한 번에 화면의 1/3 이상씩 튀면 가상 머신으로 보고 고정 없이 조작으로 바꿈
-    if (mx || my) { if (Math.abs(mx) < 300 && Math.abs(my) < 300) lockMoved = lockEver = true; }
-    else if (!lockEver && ++zeroMoves >= 6) { setFree(true, '이 환경에 맞춰 마우스 조작 방식을 바꿨습니다', false); return; }
-    if (Math.abs(mx) > innerWidth * 0.33 || Math.abs(my) > innerHeight * 0.33) {
-      const now = performance.now(); if (now - bigT > 2000) { bigT = now; bigMoves = 0; }
-      if (++bigMoves >= 3) { setFree(true, '이 환경에 맞춰 마우스 조작 방식을 바꿨습니다', false); }
-      return;
-    }
-    look(mx, my);
-  } else if (!lockMode) {
-    if (lastCX !== null) look(e.clientX - lastCX, e.clientY - lastCY, SENS * 1.4);
-    lastCX = e.clientX; lastCY = e.clientY;
-  }
+  if (document.pointerLockElement === canvas) look(e.movementX || 0, e.movementY || 0);
 });
-document.addEventListener('mouseleave', () => { mouseIn = false; lastCX = null; });
-addEventListener('mouseout', e => { if (!e.relatedTarget) { mouseIn = false; lastCX = null; } });
-let dragInfo = null;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', e => {
   if (state === 'play' && !isTouch && e.button === 2) {
@@ -1679,19 +1625,14 @@ canvas.addEventListener('mousedown', e => {
     return;
   }
   if (state !== 'play' || isTouch || e.button !== 0) return;
-  if (document.pointerLockElement !== canvas) {
-    if (lockMode) { requestLock(); return; }
-    if (!forceFree) requestLock();
-  }
-  mouseDown = true; firePressed = true; lockInput = true;
-  if (!lockMode) dragInfo = { moved:0 };
+  if (document.pointerLockElement !== canvas) { requestLock(); return; }
+  mouseDown = true; firePressed = true;
 });
-addEventListener('mouseup', () => { mouseDown = false; dragInfo = null; });
+addEventListener('mouseup', () => { mouseDown = false; });
 
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas) {
-    if (forceFree) { document.exitPointerLock(); return; }
-    lockWorked = true; lockMode = true; lockMoved = false; zeroMoves = 0; bigMoves = 0; lockIdle = 0; lockInput = false; $('lockTip').hidden = true;
+    lockWorked = true; lockMode = true;
     if (state === 'paused') { state = 'play'; $('pauseOv').hidden = true; }
   } else if (state === 'play' && lockMode) {
     state = 'paused'; $('pauseOv').hidden = false; $('pauseMsg').textContent = '화면을 클릭하면 이어서 진행합니다.'; mouseDown = false; for (const k in keys) keys[k] = false;
@@ -2228,23 +2169,24 @@ function killEnemy(e) {
   SND.play('kill');
   scene.remove(e.g);
   if (e.loot) {
-    const L = e.loot, items = [L.tag]; for (let k = 0; k < L.n; k++) items.push(pickLoot(L.table)); if (Math.random() < L.key) items.push('keycard');
+    // 확정은 보스 고유 품목 1개뿐, 나머지는 개수와 품목 모두 무작위
+    const L = e.loot, items = [L.tag], n = rollN(L.n[0], L.n[1]); for (let k = 0; k < n; k++) items.push(pickLoot(L.table)); if (Math.random() < L.key) items.push('keycard');
     const bx = addLootBox(c.x, c.z, 'bossdrop', Math.max(0, e.g.position.y), false, items); bx.title = `${e.name}의 전리품`;
     say(`${e.name}을(를) 쓰러뜨렸습니다`); SND.play('bossdie');
   } else if (e.type === 'jugg') {
-    const items = ['v_jcore']; for (let k = 0; k < 7; k++) items.push(pickLoot('cmdr')); if (Math.random() < 0.75) items.push('keycard');
+    const items = ['v_jcore'], n = rollN(2, 4); for (let k = 0; k < n; k++) items.push(pickLoot('cmdr')); if (Math.random() < 0.4) items.push('keycard');
     addLootBox(c.x, c.z, 'jugg', Math.max(0, e.g.position.y), false, items);
     say('파쇄기를 쓰러뜨렸습니다'); SND.play('bossdie'); setTimeout(() => SND.play('bossdie'), 500);
   } else if (e.cmdr) {
-    const items = ['v_cmd', pickLoot('cmdr'), pickLoot('cmdr'), pickLoot('cmdr'), pickLoot('cmdr'), pickLoot('cmdr'), pickLoot('cmdr')]; if (Math.random() < 0.6) items.push('keycard');
+    const items = ['v_cmd'], n = rollN(1, 3); for (let k = 0; k < n; k++) items.push(pickLoot('cmdr')); if (Math.random() < 0.3) items.push('keycard');
     addLootBox(c.x, c.z, 'cmdr', Math.max(0, e.g.position.y), false, items);
     say('증원 지휘관을 쓰러뜨렸습니다'); SND.play('bossdie');
   } else if (e.type === 'boss') {
-    const items = ['v_tag', pickLoot('vault'), pickLoot('vault'), pickLoot('vault')]; if (Math.random() < 0.35) items.push('keycard');
+    const items = ['v_tag'], n = rollN(1, 2); for (let k = 0; k < n; k++) items.push(pickLoot('vault')); if (Math.random() < 0.18) items.push('keycard');
     addLootBox(c.x, c.z, 'boss', Math.max(0, e.g.position.y), false, items);
     say('경비대장을 쓰러뜨렸습니다'); SND.play('bossdie');
   } else if (e.escort) {
-    const items = [pickLoot('escort'), pickLoot('escort'), pickLoot('escort')]; if (Math.random() < 0.06) items.push('keycard');
+    const items = [], n = rollN(1, 3); for (let k = 0; k < n; k++) items.push(pickLoot('escort')); if (Math.random() < 0.03) items.push('keycard');
     addLootBox(c.x, c.z, 'escort', Math.max(0, e.g.position.y), false, items);
   } else if (mode === 'raid' && Math.random() < (e.reinf ? (e.elite ? 0.35 : 0.2) : 0.45)) addLootBox(c.x, c.z, 'drop', Math.max(0, e.g.position.y), true);
   if (mode === 'raid' && e.isBoss && lootBoxes.length > nBox) { const extra = bossAmmoDrop(e); if (extra) lootBoxes[lootBoxes.length - 1].items.push(extra); }
@@ -2584,11 +2526,6 @@ function updatePlayer(dt) {
   let ty = 0, tp = 0;
   if (keys.ArrowLeft) ty += 1; if (keys.ArrowRight) ty -= 1;
   if (keys.ArrowUp) tp += 1; if (keys.ArrowDown) tp -= 1;
-  if (!lockMode && !isTouch && mouseIn) {
-    const E = 0.1;
-    if (mouseX < E) ty += (E - mouseX) / E; else if (mouseX > 1 - E) ty -= (mouseX - (1 - E)) / E;
-    if (mouseY < E) tp += (E - mouseY) / E * 0.7; else if (mouseY > 1 - E) tp -= (mouseY - (1 - E)) / E * 0.7;
-  }
   P.yaw += clamp(ty, -1.5, 1.5) * 2.4 * dt; P.pitch = clamp(P.pitch + clamp(tp, -1, 1) * 1.6 * dt, -1.45, 1.45);
   ix += touchMove.x; iz += touchMove.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
@@ -2890,20 +2827,24 @@ const ITEMS = {
   keycard:{ kind:'key', name:'보안 카드키 (5회)', size:1, value:60000 }
 };
 const SHOP = ['ammo_ap', 'ammo_he', 'repkit3', 'frag', 'keycard', 'medkit', 'bag_t', 'bag_l', 's_reddot', 's_holo', 'light', 'laser', 'combo', 's_mid', 'w6', 'w1', 'w2', 's_vari', 'w5', 's_sniper', 'w3', 'w4'];
+// 전리품 표: [아이템, 가중치]. 고가 품목은 가중치를 낮추고, 고급 표에도 저가 품목을 섞어 고가 품목이 덜 나오게 함
 const LOOT = {
-  weapon:[['repkit2', 1], ['repkit3', 0.4], ['frag', 2.5], ['w2', 3], ['w1', 3], ['w6', 3], ['w5', 1.5], ['w3', 1], ['w4', 0.04], ['ammo', 6], ['s_reddot', 3], ['s_holo', 2], ['s_mid', 1.5], ['laser', 2], ['light', 1.5], ['plate', 3]],
+  weapon:[['repkit2', 1], ['repkit3', 0.25], ['frag', 2.5], ['w2', 3], ['w1', 3], ['w6', 3], ['w5', 1], ['w3', 0.6], ['w4', 0.02], ['ammo', 6], ['s_reddot', 3], ['s_holo', 2], ['s_mid', 1.5], ['laser', 2], ['light', 1.5], ['plate', 3]],
   med:[['repkit1', 2], ['repkit2', 1], ['medkit', 8], ['plate', 3], ['v_sample', 1]],
-  tech:[['keycard', 0.05], ['v_battery', 4], ['v_chip', 3], ['v_drive', 1.2], ['s_vari', 1], ['s_sniper', 0.6], ['laser', 2], ['light', 1.5], ['combo', 0.6], ['v_tool', 3]],
+  tech:[['keycard', 0.03], ['v_battery', 4], ['v_chip', 3], ['v_drive', 0.8], ['s_vari', 0.8], ['s_sniper', 0.4], ['laser', 2], ['light', 1.5], ['combo', 0.4], ['v_tool', 3]],
   bio:[['v_sample', 5], ['v_serum', 3], ['medkit', 2]],
-  docs:[['keycard', 0.05], ['v_docs', 6], ['v_chip', 2], ['v_drive', 0.6]],
-  misc:[['repkit1', 1.5], ['repkit2', 0.6], ['frag', 1.5], ['keycard', 0.03], ['v_tool', 4], ['ammo', 4], ['medkit', 3], ['plate', 3], ['s_reddot', 1], ['laser', 1], ['light', 1], ['v_battery', 2], ['v_docs', 1]],
-  drop:[['repkit1', 1], ['frag', 1.2], ['ammo', 5], ['medkit', 3], ['v_tool', 3], ['plate', 2], ['v_battery', 1.5], ['s_reddot', 0.6], ['keycard', 0.02]],
-  cmdr:[['v_core', 4], ['v_plan', 3.5], ['v_gold', 3], ['w4', 0.08], ['w3', 1.2], ['s_sniper', 1.5], ['bag_l', 0.8], ['v_drive', 1.5]],
-  tier3:[['v_core', 4], ['v_plan', 3], ['v_cmd', 1.2], ['v_gold', 2], ['w4', 0.12], ['s_sniper', 1.2], ['bag_l', 1], ['keycard', 0.8], ['v_jcore', 0.3]],
-  bossbox:[['v_gold', 4], ['v_core', 2.2], ['v_plan', 2.6], ['v_drive', 3], ['w5', 1.2], ['w4', 0.06], ['w3', 1], ['s_sniper', 1.2], ['s_vari', 1.5], ['bag_t', 0.8], ['keycard', 0.7]],
-  escort:[['medkit', 3], ['plate', 3], ['ammo', 2], ['s_mid', 1.5], ['s_vari', 0.8], ['laser', 1.5], ['combo', 0.6], ['v_chip', 2.5], ['v_drive', 1.5], ['v_serum', 1.5], ['v_gold', 0.6], ['w2', 0.8], ['w6', 0.8], ['w5', 0.4]],
-  vault:[['v_gold', 4], ['v_core', 2], ['v_plan', 2.5], ['v_drive', 4], ['v_serum', 3], ['w4', 0.06], ['w5', 1], ['s_sniper', 1], ['s_vari', 1.5]]
+  docs:[['keycard', 0.03], ['v_docs', 6], ['v_chip', 2], ['v_drive', 0.4]],
+  misc:[['repkit1', 1.5], ['repkit2', 0.6], ['frag', 1.5], ['keycard', 0.02], ['v_tool', 4], ['ammo', 4], ['medkit', 3], ['plate', 3], ['s_reddot', 1], ['laser', 1], ['light', 1], ['v_battery', 2], ['v_docs', 1]],
+  drop:[['repkit1', 1], ['frag', 1.2], ['ammo', 5], ['medkit', 3], ['v_tool', 3], ['plate', 2], ['v_battery', 1.5], ['s_reddot', 0.6], ['keycard', 0.01]],
+  cmdr:[['v_core', 2.5], ['v_plan', 2.2], ['v_gold', 2.2], ['w4', 0.04], ['w3', 0.8], ['s_sniper', 1.2], ['bag_l', 0.6], ['v_drive', 1.5], ['v_chip', 3], ['v_battery', 3], ['medkit', 2.5], ['plate', 2], ['ammo', 2]],
+  tier3:[['v_core', 2.5], ['v_plan', 2], ['v_cmd', 0.6], ['v_gold', 1.6], ['w4', 0.06], ['s_sniper', 1], ['bag_l', 0.7], ['keycard', 0.4], ['v_jcore', 0.15], ['v_drive', 2.5], ['v_chip', 2.5], ['medkit', 2], ['plate', 2], ['repkit2', 1]],
+  bossbox:[['v_gold', 2.5], ['v_core', 1.4], ['v_plan', 1.6], ['v_drive', 3], ['w5', 1.2], ['w4', 0.03], ['w3', 0.6], ['s_sniper', 1], ['s_vari', 1.5], ['bag_t', 0.8], ['keycard', 0.35], ['v_chip', 3], ['v_battery', 2.5], ['medkit', 2], ['plate', 2]],
+  escort:[['medkit', 3], ['plate', 3], ['ammo', 2], ['s_mid', 1.5], ['s_vari', 0.8], ['laser', 1.5], ['combo', 0.4], ['v_chip', 2.5], ['v_drive', 1.2], ['v_serum', 1.5], ['v_gold', 0.3], ['w2', 0.8], ['w6', 0.8], ['w5', 0.25]],
+  vault:[['v_gold', 2.5], ['v_core', 1.3], ['v_plan', 1.6], ['v_drive', 3], ['v_serum', 3], ['w4', 0.03], ['w5', 0.7], ['s_sniper', 0.8], ['s_vari', 1.5], ['v_chip', 2.5], ['v_sample', 2], ['medkit', 1.5]]
 };
+// 무작위 개수: lo ~ hi 사이 정수
+const rollN = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+
 const BOX_COL = { bossdrop:'#c9a21a', tier3:'#4dd8ff', jugg:'#4dd8ff', cmdr:'#c9a21a', bossbox:'#3a3d42', escort:'#5a1a1e', boss:'#7a1f24', vault:'#c9a21a', weapon:'#6b7a3a', med:'#e8ecee', tech:'#35607a', bio:'#9a2a36', docs:'#7a6a55', misc:'#8a6a3a', drop:'#2b2e33' };
 const BOX_NAME = { bossdrop:'보스 전리품', tier3:'최심부 보급함', jugg:'파쇄기의 잔해', cmdr:'증원 지휘관의 전리품', bossbox:'경비대 보급함', escort:'호위병의 전리품', boss:'경비대장의 전리품', vault:'보안 금고', weapon:'무기 상자', med:'의료 상자', tech:'장비 상자', bio:'시료 보관함', docs:'문서함', misc:'잡동사니 상자', drop:'전리품' };
 const RAID = {
@@ -2980,6 +2921,8 @@ const CHAR = {
 const CHAR_COST = [100000, 250000, 500000];
 // 엘리트 효과: 캐릭터 훈련을 모두 끝내면 적용. 반동, 재장전(충전), 이동 속도가 강화 1단계만큼 더 좋아지고 조준 속도가 빨라짐
 const ELITE_ADS = 1.5;
+// 파밍 모드 기본값(훈련 0단계): 조준 전환 속도는 웨이브 미니게임의 75%, 수리키트 1회 회복량은 방어구 최대치의 30%
+const RAID_ADS_BASE = 0.75, REPAIR_BASE = 0.3;
 const isElite = () => Object.keys(CHAR).every(k => ((STASH.ch && STASH.ch[k]) || 0) >= 3);
 if (!STASH.fac) STASH.fac = { bench:0, med:0, intel:0, pouch:0 };
 // 훈련 항목 변경: 최대 체력, 방어력 훈련은 삭제하고 쓴 크레딧을 돌려줌. 새 항목(수리 효율, 조준 속도)은 0단계부터
@@ -3081,7 +3024,7 @@ function addLootBox(x, z, type, feet = 0, small = false, preset = null) {
   const body = part(g, BOX, std(col, { roughness:0.6 }), small ? [0.5, 0.35, 0.4] : [0.9, 0.55, 0.6], [0, small ? 0.18 : 0.28, 0]);
   const strip = part(g, BOX, glow('#f0a530'), small ? [0.52, 0.05, 0.42] : [0.92, 0.06, 0.62], [0, small ? 0.3 : 0.5, 0]);
   g.position.set(x, base, z); g.rotation.y = rand(0, 3.14); scene.add(g);
-  const n = type === 'drop' ? 1 + (Math.random() < 0.4 ? 1 : 0) : type === 'vault' ? 4 : 2 + Math.floor(Math.random() * 3);
+  const n = type === 'drop' ? 1 + (Math.random() < 0.4 ? 1 : 0) : type === 'vault' ? rollN(2, 4) : 2 + Math.floor(Math.random() * 3);
   const items = preset || []; if (!preset) for (let i = 0; i < n; i++) items.push(pickLoot(type));
   const box = { g, strip, type, items, base, opened:false }; lootBoxes.push(box); return box;
 }
@@ -3445,7 +3388,7 @@ function nearBox() {
   }
   return best;
 }
-// 방어구 수리: 최대치의 40% 회복(수리 효율 훈련으로 증가), 사용 횟수가 남으면 한 단계 낮은 키트로 바뀜
+// 방어구 수리: 최대치의 30% 회복(수리 효율 훈련으로 증가), 사용 횟수가 남으면 한 단계 낮은 키트로 바뀜
 function useRepair(idx) {
   if (state !== 'play' && state !== 'inv' || !raid) return;
   let i = idx;
@@ -3453,7 +3396,7 @@ function useRepair(idx) {
   if (i === undefined || i < 0) { say('방어구 수리키트가 없습니다', 1); SND.play('empty'); return; }
   if (P.ar >= P.arMax) { say('방어구가 멀쩡합니다', 1); return; }
   const id = raid.bag[i], u = ITEMS[id].uses;
-  const add = Math.round(P.arMax * 0.4 * (P.repMul || 1)); P.ar = Math.min(P.arMax, P.ar + add);
+  const add = Math.round(P.arMax * REPAIR_BASE * (P.repMul || 1)); P.ar = Math.min(P.arMax, P.ar + add);
   raid.bag.splice(i, 1); if (u > 1) raid.bag.push('repkit' + (u - 1));
   SND.play('reload', 0.6); say(`방어구 수리 (+${add}${u > 1 ? `, 남은 ${u - 1}회` : ', 키트 소진'})`, 1);
 }
@@ -3545,10 +3488,10 @@ function navSpot(x, z) {
 }
 // 거점 보스 무리: 보스 + 호위 + 보스가 쓰러질 때까지 잠긴 보급함
 const BOSS_LOOT = {
-  snp:{ tag:'v_snipe', table:'cmdr', n:4, key:0.3 },
-  bguard:{ tag:'v_shield', table:'cmdr', n:3, key:0.2 },
-  regional:{ tag:'v_region', table:'tier3', n:7, key:0.8 },
-  mech:{ tag:'v_mcore', table:'tier3', n:4, key:0.35 }
+  snp:{ tag:'v_snipe', table:'cmdr', n:[1, 3], key:0.15 },
+  bguard:{ tag:'v_shield', table:'cmdr', n:[1, 2], key:0.1 },
+  regional:{ tag:'v_region', table:'tier3', n:[2, 4], key:0.4 },
+  mech:{ tag:'v_mcore', table:'tier3', n:[1, 3], key:0.18 }
 };
 function spawnOneBoss(type, x, z) {
   const p = navSpot(x, z);
@@ -3584,7 +3527,7 @@ function spawnBossGroup(b) {
   }
   const at = b.boxAt || [list[0].at[0], list[0].at[1] - 3.5];
   const q = navSpot(at[0], at[1]);
-  const items = []; for (let k = 0; k < b.n; k++) items.push(pickLoot(b.box));
+  const items = [], bn = rollN(Math.ceil(b.n / 2), b.n); for (let k = 0; k < bn; k++) items.push(pickLoot(b.box));
   const bb = addLootBox(q[0], q[1], b.box, 0, false, items);
   bb.g.scale.set(1.5, 1.4, 1.5); bb.locked = true; bb.owners = owners;
   const lamp = new THREE.Mesh(BOXG, new THREE.MeshBasicMaterial({ color:'#ff3a2e' })); lamp.scale.set(0.25, 0.12, 0.25); lamp.position.set(0, 0.62, 0); bb.g.add(lamp); bb.lamp = lamp;
@@ -3646,7 +3589,7 @@ function beginRaid() {
   clearRaid(); aiming = false;
   resetGame();
   wave = 2;
-  P.maxHp = 100; P.hp = P.maxHp; P.spd = CHAR.spd.fx(STASH.ch.spd + (isElite() ? 1 : 0)); P.adsMul = CHAR.ads.fx(STASH.ch.ads) * (isElite() ? ELITE_ADS : 1); P.healMul = CHAR.med.fx(STASH.ch.med); P.defMul = 1; P.repMul = CHAR.rep.fx(STASH.ch.rep);
+  P.maxHp = 100; P.hp = P.maxHp; P.spd = CHAR.spd.fx(STASH.ch.spd + (isElite() ? 1 : 0)); P.adsMul = RAID_ADS_BASE * CHAR.ads.fx(STASH.ch.ads) * (isElite() ? ELITE_ADS : 1); P.healMul = CHAR.med.fx(STASH.ch.med); P.defMul = 1; P.repMul = CHAR.rep.fx(STASH.ch.rep);
   const AT = ARMOR_TIERS[HL.armor || 0]; P.ar = P.arMax = AT.pts; P.arAbs = AT.abs;
   for (const w of loadout) if (w) ammo[w].res = WEAPONS[w].charge ? Infinity : WEAPONS[w].mag * 2;
   const cfg = RAID[mapKey];
@@ -3665,7 +3608,7 @@ function beginRaid() {
       } else if (!W.charge) raid.queues[mw] = [{ type:'std', n:ammo[mw].mag + ammo[mw].res }];
     } }
   for (const l of cfg.loot) addLootBox(l[0], l[1], l[2], l[3] || 0);
-  for (const v of VAULTS) for (const l of v.loot) { const items = []; for (let k = 0; k < v.n; k++) items.push(pickLoot(v.table)); addLootBox(l[0], l[1], 'vault', 0, false, items); }
+  for (const v of VAULTS) for (const l of v.loot) { const items = [], vn = rollN(Math.ceil(v.n / 2), v.n); for (let k = 0; k < vn; k++) items.push(pickLoot(v.table)); addLootBox(l[0], l[1], 'vault', 0, false, items); }
   cfg.ext.forEach(addExtract);
   placeEnemies(cfg);
   if (cfg.bosses) cfg.bosses.forEach(spawnBossGroup);
@@ -3683,7 +3626,7 @@ function beginRaid() {
     }
     // 경비대 보급함: 경비대장이 살아 있는 동안 잠겨 있음
     const q = spot(cfg.boss[0], cfg.boss[1] - 3.5);
-    const items = []; for (let k = 0; k < 5; k++) items.push(pickLoot('bossbox'));
+    const items = [], bn = rollN(3, 5); for (let k = 0; k < bn; k++) items.push(pickLoot('bossbox'));
     const bb = addLootBox(q[0], q[1], 'bossbox', 0, false, items);
     bb.g.scale.set(1.5, 1.4, 1.5); bb.locked = true; bb.owners = [bossE];
     const lamp = new THREE.Mesh(BOXG, new THREE.MeshBasicMaterial({ color:'#ff3a2e' })); lamp.scale.set(0.25, 0.12, 0.25); lamp.position.set(0, 0.62, 0); bb.g.add(lamp); bb.lamp = lamp;
@@ -4224,14 +4167,8 @@ function resume() {
   setTimeout(() => {
     if (my !== resumeTry || state !== 'paused' || document.pointerLockElement === canvas) return;
     $('pauseOv').hidden = false;
-    $('pauseMsg').textContent = '브라우저가 마우스 고정을 허용하지 않았습니다. 잠시 뒤 다시 누르거나, 고정 없이 계속하십시오.';
+    $('pauseMsg').textContent = '브라우저가 마우스 고정을 허용하지 않았습니다. 잠시 뒤 다시 눌러 주십시오.';
   }, 900);
-}
-function resumeFree() {
-  resumeTry++;
-  if (forceFree) { setFree(false); resume(); return; }   // 버튼이 '마우스 고정 다시 쓰기' 일 때
-  setFree(true);
-  $('pauseOv').hidden = true; state = 'play';
 }
 function gameOver() {
   if (mode === 'raid') { raidEnd(false, '쓰러졌습니다'); return; }
@@ -4299,7 +4236,6 @@ renderMaps();
 buildLevel(mapChoice);
 $('againBtn').addEventListener('click', () => { $('overOv').hidden = true; $('waveOv').hidden = false; state = 'title'; });
 $('resumeBtn').addEventListener('click', resume);
-$('freeBtn').addEventListener('click', e => { e.stopPropagation(); resumeFree(); });
 $('pauseOv').addEventListener('click', e => { if (e.target === $('pauseOv')) resume(); });
 function toggleMute() {
   const m = SND.toggle();
@@ -4315,34 +4251,16 @@ if (isTouch) {
 }
 $('muteBtn').addEventListener('click', toggleMute);
 let inFrame = true; try { inFrame = window.top !== window.self; } catch (_) {}
-if (!inFrame) $('newTabBtn').hidden = true;
-$('relockBtn').addEventListener('click', e => { e.stopPropagation(); setFree(false); });
-if (isTouch) $('freeBtn').hidden = true;
-$('newTabBtn').addEventListener('click', () => { window.open(location.href, '_blank', 'noopener'); });
+$('newTabBtn').addEventListener('click', e => { e.stopPropagation(); window.open(location.href, '_blank', 'noopener'); });
 
 // ---------- 루프 ----------
 resetGame();
 
-// 소프트웨어 렌더러(그래픽 가속 없음)면 처음부터 저사양으로 시작
-try {
-  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-  const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-  if (/llvmpipe|swiftshader|software|softpipe|svga3d|vmware|virtualbox|virgl|parallels|qxl/i.test(name)) { setLowSpec(1); if (!freeChosen) setFree(true, null, false); }
-} catch (_) {}
-let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0, curHidden = false;
+let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = now - last;
   const dt = Math.min(0.05, Math.max(0, raw / 1000)); last = now;
-  // 고정 없는 방식으로 플레이 중에는 커서를 숨김
-  const hideCur = state === 'play' && !lockMode && !isTouch;
-  if (hideCur !== curHidden) { curHidden = hideCur; canvas.style.cursor = document.body.style.cursor = hideCur ? 'none' : ''; }
-  // 마우스가 고정된 채 키나 클릭 입력은 있는데 3초 동안 마우스 움직임이 한 번도 안 들어오면 이 환경에서는 고정이 안 먹는 것으로 봄.
-  // 정상적인 움직임이 한 번이라도 들어온 적이 있으면 더 이상 검사하지 않음
-  if (state === 'play' && !isTouch && lockMode && !lockEver && lockInput && document.pointerLockElement === canvas) {
-    lockIdle += Math.min(raw, 100) / 1000;
-    if (lockIdle > 3) setFree(true, '이 환경에 맞춰 마우스 조작 방식을 바꿨습니다', false);
-  }
   // 최근 90프레임 평균이 초당 24프레임보다 느리면 한 단계씩 낮춤
   if (lowSpec < 2 && raw < 1000 && (state === 'play' || state === 'title')) {
     slowAcc += raw; slowN++;
