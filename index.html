@@ -1207,7 +1207,7 @@ function buildLabB2() {
   wallXd(-32, -32, 32, [-8, 24]); wallXd(32, -32, 32, [-24, 14]);
   // 북쪽 의학 연구동
   for (const [x, dz] of [[-32, -36], [-16, -44], [0, -36], [16, -44], [32, -36]]) wallXd(x, -48, -32, [dz]);
-  wallZd(-32, -48, -32, [-40]); wallZd(-32, 32, 48, [40]);
+  wallZd(-32, -48, -32, [[-40, 1.9]]); wallZd(-32, 32, 48, [40]);
   floorTint(-48, 48, -48, -32, '#3ad99a', 0.07);
   shelfRow(-46.6, -40, 1, 10, '#dfe5e8', '#d8323a'); shelfRow(-34, -44, 1, 6, '#dfe5e8', '#d8323a');
   labTable(-24, -40, 4, 1.4); bed(-29, -44); bed(-29, -38); glassWall(-20, -43, 0.1, 6, 2.2); desk(-20, -36);
@@ -1229,7 +1229,7 @@ function buildLabB2() {
   deco(BOXG, glow('#c8ffb0'), [3.2, 0.06, 2.4], [-44, 2.6, 39]);
   for (let k = 0; k < 4; k++) { addBox(-28 + (k % 2) * 8, 36 + Math.floor(k / 2) * 7, 2.2, 1.2, 1.6, { color:'#e9eef0', metal:0.3 }); deco(BOXG, glow('#7dff6a'), [1.6, 0.4, 0.05], [-28 + (k % 2) * 8, 1.2, 35.38 + Math.floor(k / 2) * 7]); }
   for (const x of [-14, -2]) { glassWall(x, 41, 3, 0.1, 3); glassWall(x - 1.5 * Math.sign(x + 8), 44.5, 0.1, 7, 3);
-    deco(CYL, glow('#4fd87a'), [0.6, 2.4, 0.6], [x, 1.4, 45]); }
+    deco(CYL, glow('#4fd87a'), [0.6, 2.4, 0.6], [x, 1.2, 45]); }
   for (const x of [4, 12]) { deco(CYL, metal, [0.95, 0.3, 0.95], [x, 0.15, 42]); const tank = deco(CYL, new THREE.MeshStandardMaterial({ color:'#bfe3ff', transparent:true, opacity:0.28, depthWrite:false }), [0.9, 2.8, 0.9], [x, 1.7, 42]); worldMeshes.push(tank); deco(CYL, glow('#4fd87a'), [0.7, 2.6, 0.7], [x, 1.7, 42]); solidDeco(x, 42, 1.8, 1.8, 3.4); }
   glassWall(8, 38, 10, 0.1, 2.6);
   shelfRow(20, 46.6, 6, 1, '#cfd6a8', '#d8ff7a'); shelfRow(28, 46.6, 6, 1, '#cfd6a8', '#d8ff7a'); labTable(24, 39, 5, 1.4);
@@ -1253,7 +1253,7 @@ function buildLabB2() {
 function buildLabB1() {
   const metal = std('#6d757b', { metalness:0.6 }), dark = std('#2b3035', { metalness:0.5 }), white = std('#e6eaec', { metalness:0.2 });
   wallZd(0, -48, 48, [-27, 26]);
-  wallZd(16, -48, 48, [-44, -36, -24, -8, 8, 24, 40]);
+  wallZd(16, -48, 48, [[-44, 1.9], -36, -24, -8, 8, 24, 40]);
   // 숙소 구역 (북쪽 절반): 북쪽 줄 개인 숙소 8칸, 가운데 공용 라운지, 남쪽 줄 샤워실, 세탁실, 2인실, 매점, 체력 단련실
   floorTint(-48, 48, -48, 0, '#c9a0ff', 0.06);
   for (const x of [-36, -24, -12, 0, 12, 24, 36]) wallXd(x, -48, -36, []);
@@ -1278,7 +1278,7 @@ function buildLabB1() {
   for (const [x, z] of [[-30, -24], [0, -18], [30, -24]]) ceilPanel(x, z, 1, LAB2.hall.light, 1.0);
   addSign(LAB2.hall, -47.9, -24, H90, true);
   // 남쪽 줄: 공용 샤워실, 세탁실, 2인실 3칸, 매점, 체력 단련실
-  for (let k = 0; k < 5; k++) { addBox(-46 + k * 4, -2.2, 0.15, 3.6, 2.2, { color:'#dfe8ee' }); deco(CYL, std('#b8c2c8', { metalness:0.7 }), [0.12, 0.3, 0.12], [-44 + k * 4, 2.3, -1.2]); }
+  for (let k = 0; k < 5; k++) { addBox(-46 + k * 4, -2.2, 0.15, 3.6, 2.2, { color:'#dfe8ee' }); deco(CYL, std('#b8c2c8', { metalness:0.7 }), [0.12, 0.3, 0.12], [-44 + k * 4, 2.3, -0.35]); }
   floorTint(-48, -24, -12, 0, '#9fd8ff', 0.12);
   for (let k = 0; k < 4; k++) { addBox(-22.6 + k * 2.4, -1.2, 1.8, 1.4, 1.2, { color:'#f2f4f6', metal:0.3 }); deco(CYL, std('#3a4048', { metalness:0.6 }), [0.45, 0.06, 0.45], [-22.6 + k * 2.4, 0.75, -1.92]).rotation.x = H90; }
   for (const cx of [-6, 6, 18]) { bunk(cx - 4, -3); bunk(cx + 4, -3); desk(cx, -1.2); }
@@ -1405,7 +1405,7 @@ const MAPS = {
         level = shared; addBounds(18, labWallTex);
         // 계단: 지하 3층-2층 3곳, 지하 2층-1층 2곳
         const h1 = [addStairs(-40, -46, -32, 0, shared), addStairs(40, -10, -24, 0, shared), addStairs(-8, 46, 34, 0, shared)];
-        const h2 = [addStairs(40, -2, 12, 1, shared), addStairs(-44, 2, 16, 1, shared)];
+        const h2 = [addStairs(40, 1, 15, 1, shared), addStairs(-44, 2, 16, 1, shared)];
         level = shared; addSlab(6, h1, G[1]); addSlab(12, h2, G[2]);
         { const r = new THREE.Mesh(new THREE.PlaneGeometry(BX * 2, BZ * 2), new THREE.MeshStandardMaterial({ color:'#8f989d', roughness:0.95 })); r.rotation.x = Math.PI / 2; r.position.y = 18; G[2].add(r); }
         level = G[0]; FY = 0; buildLabB3();
@@ -1565,8 +1565,8 @@ function updateFloors(dt, x, y, z) {
     floorVisT = 0.2;
     const pf = floorOf(y - 1.7);
     FLOOR_GROUPS.forEach((g, f) => {
-      // 내 층은 항상, 바로 위아래 층은 그 층으로 이어지는 계단 근처(18m)에 있을 때만 그림
-      g.visible = f === pf || (Math.abs(f - pf) === 1 && STAIRS.some(st => (st.f0 === Math.min(f, pf)) && Math.hypot(st.x - x, st.z - z) < 18));
+      // 내 층과 바로 위아래 층은 항상 그림. 두 층 떨어진 층은 바닥판 두 장에 가려 보이지 않으므로 그리지 않음
+      g.visible = Math.abs(f - pf) <= 1;
     });
   }
 }
