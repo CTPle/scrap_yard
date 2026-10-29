@@ -63,6 +63,10 @@ canvas{ display:block; width:100%; height:100%; }
 body:not(.is-raid) #consum{ display:none; }
 .top b{ color:var(--ink); font-size:20px; margin-left:6px; }
 #msg{ position:absolute; top:26%; left:0; right:0; text-align:center; font-size:clamp(20px,3.2vw,34px); font-weight:800; color:var(--ink); opacity:0; transition:opacity .25s; }
+#downBox{ position:absolute; left:50%; top:58%; transform:translateX(-50%); text-align:center; background:rgba(60,8,8,.72); border:1px solid #ff5a4a; padding:10px 18px; color:#ffd6d0; font-size:14px; line-height:1.6; }
+#downBox[hidden]{ display:none; }
+#downBox b{ display:block; font-size:20px; color:#ff6a5a; }
+#downBox span{ display:block; }
 #reloadTip{ position:absolute; top:calc(50% + 34px); left:0; right:0; text-align:center; font-size:13px; color:var(--amber); opacity:0; }
 
 #scope{ position:absolute; inset:0; display:none; background:radial-gradient(circle at center, rgba(0,0,0,0) 0, rgba(0,0,0,0) 36vmin, rgba(0,0,0,.25) 36.4vmin, #000 37vmin); }
@@ -125,6 +129,8 @@ body:not(.is-raid) #consum{ display:none; }
 .opt[disabled]{ opacity:.35; cursor:default; }
 #extList{ position:absolute; right:calc(14px + env(safe-area-inset-right,0px)); top:calc(46px + env(safe-area-inset-top,0px)); text-align:right; font-size:12.5px; color:var(--dim); line-height:1.7; }
 #extList b{ color:#7dffa0; font-weight:700; }
+#extList{ opacity:0; transition:opacity .25s; pointer-events:none; }
+#extList.show{ opacity:1; }
 #prompt{ position:absolute; left:0; right:0; bottom:calc(120px + env(safe-area-inset-bottom,0px)); text-align:center; font-size:15px; color:var(--ink); }
 #prompt kbd{ font-family:"Chakra Petch",ui-monospace,monospace; background:var(--amber); color:#1c1408; padding:1px 7px; margin-right:6px; font-weight:700; }
 #extBar{ position:absolute; left:50%; top:calc(50% + 60px); width:200px; margin-left:-100px; display:none; text-align:center; font-size:13px; color:#7dffa0; }
@@ -279,6 +285,10 @@ body.dropping #dropHint{ display:flex; }
 .tmore{ gap:6px; padding:6px; }
 body:not(.is-raid) .raidonly{ display:none; }
 body.is-raid .waveonly{ display:none; }
+.nickrow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:-0.6em 0 1em; font-size:14px; color:var(--dim); }
+.nickrow b{ color:var(--ink); font-size:16px; }
+.nickrow input{ font:inherit; font-size:14px; padding:5px 8px; width:12em; background:rgba(0,0,0,.35); color:var(--ink); border:1px solid rgba(241,233,216,.35); }
+.nickrow .err{ color:#ff7a6a; }
 .quitwarn{ color:var(--amber); font-size:13px; margin:12px 0 0; }
 #quitOv{ z-index:30; }
 .primary.danger{ background:#d9452f; color:#fff; }
@@ -333,6 +343,7 @@ body.is-raid .waveonly{ display:none; }
     <div id="zoomTxt" class="num"></div>
     <div class="hitmark" id="hitmark"></div>
     <div id="reloadTip">재장전 중</div>
+    <div id="downBox" hidden><b>쓰러졌습니다</b><span id="downTxt"></span></div>
     <div id="charge"><b id="chargeFill"></b></div>
     <div id="msg"></div>
     <div class="vitals">
@@ -376,6 +387,7 @@ body.is-raid .waveonly{ display:none; }
       <button class="tb sm" data-t="special">탄종</button>
       <button class="tb sm" data-t="zoom">배율</button>
       <button class="tb sm" data-t="laser">레이저/라이트</button>
+      <button class="tb sm raidonly" data-t="exits">탈출구</button>
       <button class="tb sm" data-t="crouch">앉기</button>
     </div>
   </div>
@@ -412,6 +424,7 @@ body.is-raid .waveonly{ display:none; }
           <dt>V</dt><dd>방어구 수리키트 사용</dd>
           <dt>B</dt><dd>특수 탄창(관통탄, 고폭탄) 장전</dd>
           <dt>T</dt><dd>레이저, 라이트 켜기, 끄기 (둘 다 끄면 적이 더 가까이 와야 발견함. 복합기는 누를 때마다 둘 다, 레이저만, 라이트만, 꺼짐 순서)</dd>
+          <dt>O</dt><dd>탈출 지점 이름 보기 (6초 동안, 출격 중에만)</dd>
           <dt>1 2 3 / 휠</dt><dd>권총(1), 주무기 두 정(2, 3) 교체</dd>
           <dt>4</dt><dd>치료 키트 사용 (H도 가능)</dd>
           <dt>Esc</dt><dd>일시정지</dd>
@@ -443,8 +456,11 @@ body.is-raid .waveonly{ display:none; }
       <button type="button" class="backbtn" id="hideBack" title="처음 화면으로"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12.5 3.5 6 10l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>처음 화면</span></button>
       <h1>은신처</h1>
       <div class="credits">보유 크레딧 <b class="num" id="credTxt">0</b> <span id="stashVal"></span></div>
+      <div id="hNick" class="nickrow"></div>
       <div class="picktitle">출격할 맵</div>
       <div class="opts" id="hMaps"></div>
+      <div class="picktitle">출격 모드</div>
+      <div class="opts" id="hModes"></div>
       <div class="picktitle">출격 장비 <span>권총은 항상 지급되며 잃지 않습니다</span></div>
       <div id="hLoad"></div>
       <div class="picktitle">출격 가방 <span>치료 키트, 수리키트, 수류탄, 카드키, 특수 탄창을 넣어 가져갑니다. 특수 탄창을 넣으면 주무기는 그 탄만 쓰고, 다 쓰면 탄약 상자를 찾을 때까지 권총만 쓸 수 있습니다</span></div>
@@ -680,7 +696,7 @@ let level = null, mapKey = null, M = null;
 let BX = 48, BZ = 48, SPAWNS = [], PADS = [], PLAT = null, START = null, AI = null, MEDKITS = [];
 // 다층 맵: FY 는 지금 짓고 있는 층의 바닥 높이. 맵을 짓는 동안만 바뀌고, 모든 구조물이 이 높이를 기준으로 놓임
 // 충돌체는 y0(아래 끝)부터 h(위 끝)까지만 막음. 예전 맵은 y0 가 없어 0 으로 봄
-let FY = 0, WAVE_START = null, STAIRS = [], LIGHT_SPOTS = [], FLOOR_GROUPS = [], PANEL_Y = 5.95;
+let BASE_START = null, FY = 0, WAVE_START = null, STAIRS = [], LIGHT_SPOTS = [], FLOOR_GROUPS = [], PANEL_Y = 5.95;
 const floorOf = y => (M && M.floorH ? Math.floor((y + 1) / M.floorH) : 0);
 // 충돌체 공간 격자: 4m 칸마다 그 근처(2m 여유)의 충돌체 목록. 충돌, 지면, 시야 판정에서 전체를 다 뒤지지 않게 함
 const CG = 4, CG_PAD = 2;
@@ -1233,7 +1249,7 @@ function buildLabB2() {
   for (const x of [4, 12]) { deco(CYL, metal, [0.95, 0.3, 0.95], [x, 0.15, 42]); const tank = deco(CYL, new THREE.MeshStandardMaterial({ color:'#bfe3ff', transparent:true, opacity:0.28, depthWrite:false }), [0.9, 2.8, 0.9], [x, 1.7, 42]); worldMeshes.push(tank); deco(CYL, glow('#4fd87a'), [0.7, 2.6, 0.7], [x, 1.7, 42]); solidDeco(x, 42, 1.8, 1.8, 3.4); }
   glassWall(8, 38, 10, 0.1, 2.6);
   shelfRow(20, 46.6, 6, 1, '#cfd6a8', '#d8ff7a'); shelfRow(28, 46.6, 6, 1, '#cfd6a8', '#d8ff7a'); labTable(24, 39, 5, 1.4);
-  crate(44, 44); barrier(40, 38, 4, 0.6);
+  barrier(40, 38, 4, 0.6); floorTint(41.5, 46.5, 41.5, 46.5, '#5dff8a', 0.12);
   for (const [k, x, z] of [['decon', -40, 40], ['culture', -24, 40], ['iso', -12, 38], ['iso', 8, 40], ['specimen', 24, 40]]) ceilPanel(x, z, 1, LAB2[k].light, 1.0);
   addSign(LAB2.decon, -47.9, 40, H90, true); addSign(LAB2.culture, -24, 47.9, Math.PI, true); addSign(LAB2.iso, -1, 32.25, 0, true);
   addSign(LAB2.iso, 8, 47.9, Math.PI, true); addSign(LAB2.specimen, 20, 32.25, 0, true); addSign(LAB2.st01, -11.5, 47.9, Math.PI, false);
@@ -1475,9 +1491,10 @@ const MAPS = {
       // 2거점: 저격수 망루, 거점 뒤편 금고 1곳
       stronghold(Z(-20), steel);
       addBox(-9, Z(-28), 3, 3, 3, { map:steel }); barrier(-9, Z(-26.6), 3, 0.3, 0.9, 3);
+      addBox(-9, Z(-198), 3, 3, 3, { map:steel }); barrier(-9, Z(-196.6), 3, 0.3, 0.9, 3);
       vault({ h:4, cx:-11, cz:-41, rect:[-14, -8, -44, -38],
         walls:[[-11, -44, 6, 0.4], [-11, -38, 6, 0.4], [-8, -43, 0.4, 2.4], [-8, -39, 0.4, 2.4]],
-        gate:[-8, -41, 0.3, 2], loot:[[-12.5, -42.6], [-12.5, -39.4]], table:'vault', n:4 });
+        gate:[-8, -41, 0.3, 2], loot:[[-12.5, -42.6], [-12.5, -39.4]], table:'tier3', n:4 });
       // 3구간: 2거점 ~ 3거점, 탈출구 2
       barrier(X(5), Z(-49), 8, 0.8, 1.3); pillar(X(-10), Z(-59));
       barrier(X(0), Z(-80), 8, 0.8, 1.3); crate(X(-11), Z(-96));
@@ -1487,10 +1504,10 @@ const MAPS = {
       stronghold(Z(-190), rust);
       vault({ h:4, cx:11, cz:-209, rect:[8, 14, -212, -206],
         walls:[[11, -212, 6, 0.4], [11, -206, 6, 0.4], [8, -211, 0.4, 2.4], [8, -207, 0.4, 2.4]],
-        gate:[8, -209, 0.3, 2], loot:[[12.5, -210.6], [12.5, -207.4]], table:'tier3', n:4 });
+        gate:[8, -209, 0.3, 2], loot:[[12.5, -210.6], [12.5, -207.4]], table:'vault', n:4 });
       vault({ h:4, cx:-11, cz:-209, rect:[-14, -8, -212, -206],
         walls:[[-11, -212, 6, 0.4], [-11, -206, 6, 0.4], [-8, -211, 0.4, 2.4], [-8, -207, 0.4, 2.4]],
-        gate:[-8, -209, 0.3, 2], loot:[[-12.5, -210.6], [-12.5, -207.4]], table:'tier3', n:4 });
+        gate:[-8, -209, 0.3, 2], loot:[[-12.5, -210.6], [-12.5, -207.4]], table:'vault', n:4 });
       // 4구간: 3거점 ~ 끝, 탈출구 3
       barrier(X(0), Z(-225), 8, 0.8, 1.3); crate(X(-11), Z(-235)); crate(X(11), Z(-241));
       barrier(X(-6), Z(-258), 8, 0.8, 1.3); pillar(X(10), Z(-268));
@@ -1535,7 +1552,7 @@ function buildLevel(key) {
   level = new THREE.Group(); scene.add(level);
   mapKey = key; M = MAPS[key]; AI = M.ai; PANEL_Y = M.panelY || 5.95;
   M.build();
-  FY = 0;
+  FY = 0; BASE_START = START;
   // 조명 묶음: 다층 맵은 조명 LIGHT_POOL 개만 만들고 플레이어 근처 자리로 옮겨 다님
   LIGHT_POOL.length = 0;
   if (M.lightPool) for (let i = 0; i < M.lightPool; i++) { const l = new THREE.PointLight('#ffffff', 0, 26, 2); level.add(l); LIGHT_POOL.push(l); }
@@ -1985,7 +2002,7 @@ let crouch = false, crouchT = 0;
 // 앉으면 눈높이 1.05m, 머리 판정 윗선 1.3m. 낮은 엄폐물 높이(COVER_H 1.3m)에 맞춘 값
 const CROUCH_DROP = 0.65;
 function setCrouch(v) {
-  if (state !== 'play') return;
+  if (state !== 'play' || P.downed) return;
   crouch = v; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.toggle('lit', crouch));
 }
 let leanT = 0, touchLean = 0;
@@ -2008,9 +2025,9 @@ function resetGame() {
   for (const n of eNades) { scene.remove(n.m); scene.remove(n.ring); } eNades = [];
   for (const r of rings) scene.remove(r.m);
   enemies = []; shots = []; pickups = []; parts = []; tracers = []; nades = []; frags = []; rings = []; shakeAmt = 0; fragCd = 0;
-  { const S0 = mode === 'wave' && WAVE_START ? WAVE_START : START; P.pos.set(S0.x, S0.y, S0.z); P.vy = 0; P.yaw = S0.yaw; } P.pitch = 0; P.maxHp = 100; P.arMax = 100; P.arAbs = 0.5; P.spd = 1; P.adsMul = 1; P.repMul = 1; P.healMul = 1; P.defMul = 1; P.hp = 100; P.ar = 25; P.onGround = true; P.calm = 0;
+  { const S0 = mode === 'wave' ? (WAVE_START || BASE_START || START) : START; P.pos.set(S0.x, S0.y, S0.z); P.vy = 0; P.yaw = S0.yaw; } P.pitch = 0; P.maxHp = 100; P.arMax = 100; P.arAbs = 0.5; P.spd = 1; P.adsMul = 1; P.repMul = 1; P.healMul = 1; P.defMul = 1; P.hp = 100; P.ar = 25; P.onGround = true; P.calm = 0;
   ammo = WEAPONS.map(w => ({ mag:w.mag, res:w.reserve }));
-  slot = Math.max(0, loadout.findIndex(w => w)); weapon = loadout[slot]; aiming = false; aimT = 0; fireCd = 0; recoilPitch = 0; recoilYaw = 0; leanT = 0; touchLean = 0; reloading = 0; switchT = 0; recoil = 0; kick = 0; dmgFlash = 0; crouch = false; crouchT = 0;
+  slot = Math.max(0, loadout.findIndex(w => w)); weapon = loadout[slot]; aiming = false; aimT = 0; fireCd = 0; recoilPitch = 0; recoilYaw = 0; leanT = 0; touchLean = 0; reloading = 0; switchT = 0; recoil = 0; kick = 0; dmgFlash = 0; crouch = false; crouchT = 0; P.downed = false; $('downBox').hidden = true;
   document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.remove('lit'));
   score = 0; kills = 0; wave = 0; waveState = 'break'; waveT = 2.5; queue = []; spawnT = 0;
   refreshSlots();
@@ -2034,6 +2051,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Digit1') setWeapon(0); if (e.code === 'Digit2') setWeapon(1); if (e.code === 'Digit3') setWeapon(2);
   if (e.code === 'Digit4' && mode === 'raid') useMed();
   if (e.code === 'KeyT') toggleLaser();
+  if (e.code === 'KeyO') showExits();
   if (e.code === 'ControlLeft' && !e.repeat) setCrouch(!crouch);
   if (e.code === 'KeyF' && mode === 'raid') interact();
   if (e.code === 'KeyH' && mode === 'raid') useMed();
@@ -2142,6 +2160,7 @@ if (isTouch) {
       if (t === 'swap') cycleWeapon(1);
       if (t === 'aim') { aiming = !aiming; b.classList.toggle('lit', aiming); }
       if (t === 'laser') toggleLaser();
+      if (t === 'exits') showExits();
       if (t === 'crouch') setCrouch(!crouch);
       if (t === 'use' && mode === 'raid') interact();
       if (t === 'heal' && mode === 'raid') useMed();
@@ -2171,6 +2190,7 @@ function cycleWeapon(dir) {
   for (let k = 1; k < n; k++) { const si = ((slot + dir * k) % n + n) % n; if (loadout[si] !== null && loadout[si] !== undefined) { setWeapon(si); return; } }
 }
 function setWeapon(si, force) {
+  if (P.downed && !force) return;
   const i = loadout[si];
   if (i === undefined || i === null || (!force && (si === slot || switchT > 0))) return;
   slot = si; weapon = i; reloading = 0; switchT = force ? 0 : 0.28; chargeT = 0;
@@ -2216,6 +2236,7 @@ function updateLaser() {
   laserDot.position.copy(end); laserDot.scale.setScalar(Math.max(0.025, camera.position.distanceTo(end) * 0.0035));
 }
 function startReload() {
+  if (P.downed) return;
   const w = WEAPONS[weapon], a = ammo[weapon];
   if (w.noReload || mode === 'wave') return;
   if (reloading > 0 || switchT > 0 || a.mag >= w.mag || a.res <= 0) return;
@@ -2226,7 +2247,7 @@ const ray = new THREE.Raycaster();
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), fwd = new THREE.Vector3();
 function fire() {
   const w = WEAPONS[weapon], a = ammo[weapon];
-  if (reloading > 0 || switchT > 0 || fireCd > 0) return;
+  if (P.downed || reloading > 0 || switchT > 0 || fireCd > 0) return;
   if (a.mag <= 0) {
     if (firePressed) SND.play('empty');
     if (a.res > 0) startReload();
@@ -2357,7 +2378,7 @@ function explode(p, dmgIn, Rin) {
 const FRAG_DMG = 320, FRAG_R = 5, FRAG_FUSE = 2;
 const fragMat = std('#4a5a32', { roughness:0.6 });
 function throwFrag() {
-  if (state !== 'play' || !raid || fragCd > 0) return;
+  if (state !== 'play' || !raid || fragCd > 0 || P.downed) return;
   const i = raid.bag.indexOf('frag');
   if (i < 0) { say('수류탄이 없습니다', 1); SND.play('empty'); return; }
   raid.bag.splice(i, 1); fragCd = 0.9;
@@ -2986,15 +3007,41 @@ function updateEnemies(dt) {
 }
 
 // ---------- 플레이어 ----------
-function jump() { if (P.onGround && state === 'play') { if (crouch) setCrouch(false); P.vy = 7.4; P.onGround = false; } }
+function jump() { if (P.onGround && state === 'play' && !P.downed) { if (crouch) setCrouch(false); P.vy = 7.4; P.onGround = false; } }
+// 협동전 다운: 체력이 0 이 되면 바로 죽지 않고 쓰러짐. 출혈 시간 안에 팀원이 살리면 일어나고,
+// 쓰러진 동안 받은 피해가 DOWN_HP 를 넘거나 출혈 시간이 끝나면 사망
+const DOWN_HP = 60, BLEED_T = 60, REVIVE_T = 3, REVIVE_HP = 30;
+function goDown() {
+  P.downed = true; P.hp = 0; P.downHp = DOWN_HP; P.bleedT = BLEED_T;
+  mouseDown = false; aiming = false; reloading = 0; $('reloadTip').style.opacity = 0;
+  crouch = true; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.add('lit'));
+  $('downBox').hidden = false; SND.play('hurt');
+}
+function downDeath(why) { P.downed = false; $('downBox').hidden = true; raidEnd(false, why); }
+// 팀원이 살려 줌 (멀티플레이에서 팀원이 F 키를 REVIVE_T 초 누르면 호출)
+function revivePlayer(hp = REVIVE_HP) {
+  if (!P.downed) return;
+  P.downed = false; P.hp = hp; $('downBox').hidden = true; setCrouch(false); say('일어났습니다', 1);
+}
+function updateDown(dt) {
+  if (!P.downed) return;
+  P.bleedT -= dt;
+  $('downTxt').textContent = `팀원이 F 키를 ${REVIVE_T}초 눌러 살릴 수 있습니다. 출혈 사망까지 ${Math.max(0, Math.ceil(P.bleedT))}초`;
+  if (P.bleedT <= 0) downDeath('쓰러진 뒤 출혈로 사망했습니다');
+}
 function hurtPlayer(d) {
   if (state !== 'play' && state !== 'inv') return;
   d *= P.defMul || 1;
+  if (P.downed) {
+    P.downHp -= d; dmgFlash = Math.min(1, dmgFlash + 0.5); SND.play('hurt');
+    if (P.downHp <= 0) downDeath('쓰러진 상태에서 사망했습니다');
+    return;
+  }
   const absorb = Math.min(P.ar, d * (P.arAbs || 0.5));
   P.ar -= absorb; P.hp -= d - absorb; P.calm = 0;
   dmgFlash = Math.min(1, dmgFlash + 0.5 + d / 40);
   SND.play('hurt');
-  if (P.hp <= 0) { P.hp = 0; gameOver(); }
+  if (P.hp <= 0) { P.hp = 0; if (mode === 'raid' && raid && raid.coop) goDown(); else gameOver(); }
 }
 function updatePlayer(dt) {
   let ix = 0, iz = 0;
@@ -3006,10 +3053,10 @@ function updatePlayer(dt) {
   P.yaw += clamp(ty, -1.5, 1.5) * 2.4 * dt; P.pitch = clamp(P.pitch + clamp(tp, -1, 1) * 1.6 * dt, -1.45, 1.45);
   ix += touchMove.x; iz += touchMove.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
-  const sprint = (keys.ShiftLeft || keys.ShiftRight) && iz < 0 && !aiming;
+  const sprint = (keys.ShiftLeft || keys.ShiftRight) && iz < 0 && !aiming && !P.downed;
   if (sprint && crouch) setCrouch(false);
   crouchT += ((crouch ? 1 : 0) - crouchT) * Math.min(1, dt * 10);
-  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5);
+  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (P.downed ? 0.35 : 1); // 쓰러지면 기어감
   const s = Math.sin(P.yaw), c = Math.cos(P.yaw);
   const vx = (ix * c + iz * s) * speed, vz = (-ix * s + iz * c) * speed;
   P.feet = P.pos.y - 1.7;
@@ -3033,7 +3080,7 @@ function updatePlayer(dt) {
     if (!insideSolid(tmpV.set(P.pos.x + rx * lo * 1.3, P.pos.y - 0.1, P.pos.z + rz * lo * 1.3))) break;
     lo *= 0.5;
   }
-  EYE.set(P.pos.x + rx * lo, P.pos.y - Math.abs(lo) * 0.15 - crouchT * CROUCH_DROP, P.pos.z + rz * lo);
+  EYE.set(P.pos.x + rx * lo, P.pos.y - Math.abs(lo) * 0.15 - crouchT * CROUCH_DROP - (P.downed ? 0.55 : 0), P.pos.z + rz * lo);
   camera.position.set(EYE.x, EYE.y + (moving ? Math.sin(P.bob) * 0.05 : 0), EYE.z);
   if (shakeAmt > 0) { camera.position.x += rand(-shakeAmt, shakeAmt); camera.position.y += rand(-shakeAmt, shakeAmt); shakeAmt = Math.max(0, shakeAmt - dt * 0.9); }
   shotAgo += dt;
@@ -3332,7 +3379,7 @@ const RAID = {
     loot:[[-4, -27, 'weapon'], [4, 27, 'misc'], [-27, 4, 'tech'], [27, -4, 'misc'], [-20, -34, 'weapon'], [20, 34, 'tech'], [31, -26, 'misc'],
           [-31, 26, 'weapon'], [-10, 24.5, 'misc'], [12, -24.5, 'med'], [-38, -17, 'misc'], [38, 17, 'med'], [2, -2, 'med', 3.2]],
     ext:[{ name:'화물 트럭', x:-44, z:-44 }, { name:'정문', x:44, z:44 }], boss:[28, -36], jugg:[36, 26] },
-  lab:{ time:1500, minDist:22, enemies:18, reinfAt:'opposite', bossMul:{ hp:1.6, dmg:1.35, spd:1.25, leash:32 }, alertR:24,
+  lab:{ extMinDist:60, time:1500, minDist:22, enemies:18, reinfAt:'opposite', bossMul:{ hp:1.6, dmg:1.35, spd:1.25, leash:32 }, alertR:24,
     // [x, z, 상자 종류, 바닥 높이] 지하 3층 0, 지하 2층 6, 지하 1층 12
     loot:[
       // 지하 2층: 중앙 연구동 (기존 방)
@@ -3354,8 +3401,14 @@ const RAID = {
       [-30, -40, 'weapon', 0], [-12, -30, 'misc', 0], [-44, -6, 'misc', 0], [-20, 6, 'weapon', 0], [-40, 26, 'misc', 0], [-20, 40, 'weapon', 0],
       [14, -44, 'tech', 0], [25, -27, 'tech', 0], [14, -6, 'docs', 0], [36, -6, 'tech', 0],
       [8, 8, 'tech', 0], [24, 44, 'misc', 0], [4, 24, 'tech', 2.4], [28.5, 6.5, 'docs', 2.4], [44, 14, 'weapon', 0]],
-    ext:[{ name:'비상 계단', x:-37, z:6, y:12 }, { name:'화물 엘리베이터', x:-42, z:42, y:0 }, { name:'배수 터널', x:44, z:-44, y:0 }], boss:[40, 30, 0] },
-  canyon:{ time:1200, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
+    // 탈출 지점: 출발 위치에서 60m 이상(층 차이는 1m당 2m로 계산) 떨어진 곳 + 어디서 출발하든 열리는 중앙 공용 탈출구
+    ext:[{ id:'e1', name:'비상 계단', x:-37, z:6, y:12 }, { id:'e2', name:'화물 엘리베이터', x:-42, z:42, y:0 }, { id:'e3', name:'배수 터널', x:44, z:-44, y:0 },
+         { id:'e4', name:'환기 통로', x:44, z:44, y:6 }, { id:'c', name:'중앙 화물 승강기', x:8, z:12, y:6, shared:true }],
+    // 출발 위치: 출격할 때마다 무작위. 멀티플레이에서는 플레이어마다 다른 곳을 배정할 예정 (y 는 바닥 높이)
+    spawns:[{ name:'지하 1층 입구 로비', x:40, y:12, z:44, yaw:0 }, { name:'지하 1층 숙소 구역', x:-43, y:12, z:-30, yaw:-Math.PI / 2 },
+            { name:'지하 3층 화물 하역장', x:-30, y:0, z:-33, yaw:-Math.PI / 2 }, { name:'지하 2층 시료 보관고', x:-40, y:6, z:20, yaw:-Math.PI / 2 }],
+    boss:[40, 30, 0] },
+  canyon:{ extMinDist:250, time:1200, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
     loot:[[CX(0, 284), CZ(284), 'med', 3.2], [CX(-10, 250), CZ(250), 'misc'], [CX(10, 232), CZ(232), 'misc'],
           [CX(-11, 198), CZ(198), 'weapon'], [CX(11, 181), CZ(181), 'misc'], [CX(-11, 181), CZ(181), 'tech'],
           [CX(-6, 134), CZ(134), 'misc'], [CX(11, 102.5), CZ(102.5), 'weapon'], [CX(-11, 67.5), CZ(67.5), 'tech'], [CX(5, 18.5), CZ(18.5), 'misc'],
@@ -3363,11 +3416,16 @@ const RAID = {
           [CX(-8, -72), CZ(-72), 'misc'], [CX(6, -111.5), CZ(-111.5), 'tech'], [CX(-11, -132.5), CZ(-132.5), 'weapon'],
           [CX(-11, -182), CZ(-182), 'tech'], [CX(11, -199), CZ(-199), 'vault'], [CX(-11, -199), CZ(-199), 'weapon'],
           [CX(-10, -230), CZ(-230), 'tech'], [CX(8, -262), CZ(-262), 'misc']],
-    ext:[{ name:'1번 배수로', x:CX(-11, 50), z:CZ(50) }, { name:'2번 정비 통로', x:CX(-11, -145), z:CZ(-145) }, { name:'협곡 끝 출구', x:CX(0, -292), z:CZ(-292) }],
+    // 탈출 지점: 출발 위치에서 250m 이상 떨어진 곳 + 가운데 거점 안의 공용 탈출구
+    ext:[{ id:'e1', name:'1번 배수로', x:CX(-11, 50), z:CZ(50) }, { id:'e2', name:'2번 정비 통로', x:CX(-11, -145), z:CZ(-145) }, { id:'e3', name:'협곡 끝 출구', x:CX(0, -292), z:CZ(-292) },
+         { id:'e4', name:'남쪽 고지대 승강기', x:-12, z:CZ(295), y:3.2 }, { id:'c', name:'중앙 거점 환기구', x:15, z:CZ(-20) + 4, shared:true }],
+    spawns:[{ name:'남쪽 고지대', x:0, y:3.2, z:CZ(290), yaw:0 }, { name:'북쪽 협곡 끝', x:-12, y:0, z:-572, yaw:Math.PI }],
+    // 양쪽 끝 거점은 중간 보스, 가운데 거점에 가장 강한 보스 무리
     bosses:[
       { type:'guard', at:[0, CZ(183)], escorts:[['brute', 5, CZ(185), 'escort'], ['brute', -5, CZ(185), 'escort']], box:'bossbox', n:5 },
-      { bosses:[{ type:'snp', at:[-9, CZ(-28)], perch:3 }, { type:'bguard', at:[3, CZ(-26)] }], escorts:[['grunt', -6, CZ(-29), 'elite'], ['drone', 6, CZ(-30), 'elite']], box:'cmdr', n:6, boxAt:[0, CZ(-30.5)] },
-      { bosses:[{ type:'regional', at:[0, CZ(-197)] }, { type:'bguard', at:[5, CZ(-194)] }, { type:'mech', at:[-6, CZ(-197)] }], escorts:[['grunt', 9, CZ(-200), 'elite'], ['grunt', -9, CZ(-200), 'elite']], box:'tier3', n:8 }
+      { bosses:[{ type:'regional', at:[0, CZ(-24)] }, { type:'bguard', at:[5, CZ(-22)] }, { type:'mech', at:[-6, CZ(-24)] }],
+        escorts:[['grunt', 9, CZ(-27), 'elite'], ['grunt', -9, CZ(-27), 'elite'], ['brute', 12, CZ(-14), 'elite'], ['brute', -12, CZ(-14), 'elite']], box:'tier3', n:8, boxAt:[0, CZ(-30.5)] },
+      { bosses:[{ type:'snp', at:[-9, CZ(-198)], perch:3 }, { type:'bguard', at:[3, CZ(-196)] }], escorts:[['grunt', -6, CZ(-199), 'elite'], ['drone', 6, CZ(-200), 'elite']], box:'cmdr', n:6, boxAt:[0, CZ(-200.5)] }
     ] }
 };
 const BAG_MAX = 12;
@@ -3546,7 +3604,7 @@ function addExtract(ex) {
   extMarks.push(g);
 }
 function clearRaid() {
-  $('radar').classList.remove('on');
+  $('radar').classList.remove('on'); $('extList').classList.remove('show'); extShowT = 0;
   $('bossBar').style.display = 'none';
   for (const b of lootBoxes) scene.remove(b.g);
   for (const m of extMarks) scene.remove(m);
@@ -3556,7 +3614,7 @@ function clearRaid() {
 function bagUsed() { return raid.bag.reduce((a, id) => a + ITEMS[id].size, 0); }
 function nearGate() { return VAULTS.find(v => !v.open && Math.hypot(v.x - P.pos.x, v.z - P.pos.z) < 2.4 && Math.abs(P.pos.y - 1.7 - (v.y || 0)) < 1) || null; }
 function interact() {
-  if (state !== 'play' || !raid) return;
+  if (state !== 'play' || !raid || P.downed) return;
   const gate = nearGate();
   if (gate) {
     const i = raid.bag.indexOf('keycard');
@@ -3887,7 +3945,7 @@ function nearBox() {
 }
 // 방어구 수리: 최대치의 30% 회복(수리 효율 훈련으로 증가), 사용 횟수가 남으면 한 단계 낮은 키트로 바뀜
 function useRepair(idx) {
-  if (state !== 'play' && state !== 'inv' || !raid) return;
+  if (state !== 'play' && state !== 'inv' || !raid || P.downed) return;
   let i = idx;
   if (i === undefined) { for (const id of ['repkit1', 'repkit2', 'repkit3']) { i = raid.bag.indexOf(id); if (i >= 0) break; } }
   if (i === undefined || i < 0) { say('방어구 수리키트가 없습니다', 1); SND.play('empty'); return; }
@@ -3924,7 +3982,7 @@ function loadSpecial() {
   say('특수 탄창이 없습니다', 1); SND.play('empty');
 }
 function useMed() {
-  if (state !== 'play' || !raid) return;
+  if (state !== 'play' || !raid || P.downed) return;
   const i = raid.bag.indexOf('medkit');
   if (i < 0) { say('치료 키트가 없습니다', 1); return; }
   if (P.hp >= P.maxHp) { say('체력이 가득 차 있습니다', 1); return; }
@@ -4086,13 +4144,23 @@ function beginRaid() {
   buildLevel(raidMap);
   setVault(false);
   clearRaid(); aiming = false;
+  // 무작위 출발: 출발 위치마다 열리는 탈출 지점이 다르고, shared 탈출 지점은 어디서 출발하든 열림
+  const rcfg = RAID[mapKey];
+  let spawn = null;
+  if (rcfg.spawns) {
+    spawn = rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
+    const q = navSpot(spawn.x, spawn.z, spawn.y);
+    START = { x:q[0], y:q[2] + 1.7, z:q[1], yaw:spawn.yaw };
+  } else START = BASE_START;
   resetGame();
   wave = 2;
   P.maxHp = 100; P.hp = P.maxHp; P.spd = CHAR.spd.fx(STASH.ch.spd + (isElite() ? 1 : 0)); P.adsMul = RAID_ADS_BASE * CHAR.ads.fx(STASH.ch.ads) * (isElite() ? ELITE_ADS : 1); P.healMul = CHAR.med.fx(STASH.ch.med); P.defMul = 1; P.repMul = CHAR.rep.fx(STASH.ch.rep);
   const AT = ARMOR_TIERS[HL.armor || 0]; P.ar = P.arMax = AT.pts; P.arAbs = AT.abs;
   for (const w of loadout) if (w) ammo[w].res = WEAPONS[w].charge ? Infinity : WEAPONS[w].mag * 2;
   const cfg = RAID[mapKey];
-  raid = { queues:{}, ammo:'std', rwave:0, t:cfg.time, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:REINF_GAP, warned:false, map:mapKey, cap };
+  raid = { queues:{}, ammo:'std', rwave:0, t:cfg.time, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:REINF_GAP, warned:false, map:mapKey, cap,
+    // 탈출 지점: 내 출발 위치에서 extMinDist 이상 떨어진 곳과 공용 탈출구. 누가 써도 사라지지 않음
+    coop:!!HL.coop, spawn, exts:cfg.ext.filter(e => !spawn || e.shared || Math.hypot(e.x - spawn.x, e.z - spawn.z) + Math.abs((e.y || 0) - spawn.y) * 2 >= cfg.extMinDist) };
   // 주무기 탄약 묶음 구성
   // 특수 탄창은 특수탄을 쓸 수 있는 첫 주무기(2번 우선)에 들어감
   { const ms = mains(), tgt = ms.find(w => !WEAPONS[w].charge && WEAPONS[w].kind !== 'grenade');
@@ -4108,7 +4176,7 @@ function beginRaid() {
     } }
   for (const l of cfg.loot) addLootBox(l[0], l[1], l[2], l[3] || 0);
   for (const v of VAULTS) for (const l of v.loot) { const items = [], vn = rollN(Math.ceil(v.n / 2), v.n); for (let k = 0; k < vn; k++) items.push(pickLoot(v.table)); addLootBox(l[0], l[1], 'vault', v.y || 0, false, items); }
-  cfg.ext.forEach(addExtract);
+  raid.exts.forEach(addExtract);
   placeEnemies(cfg);
   if (cfg.bosses) cfg.bosses.forEach(spawnBossGroup);
   if (cfg.boss) {
@@ -4130,17 +4198,21 @@ function beginRaid() {
     bb.g.scale.set(1.5, 1.4, 1.5); bb.locked = true; bb.owners = [bossE];
     const lamp = new THREE.Mesh(BOXG, new THREE.MeshBasicMaterial({ color:'#ff3a2e' })); lamp.scale.set(0.25, 0.12, 0.25); lamp.position.set(0, 0.62, 0); bb.g.add(lamp); bb.lamp = lamp;
   }
+  for (const e of enemies) coopBuff(e);
   $('hideOv').hidden = true; $('raidOv').hidden = true; $('startOv').hidden = true; $('pauseOv').hidden = true; $('hud').hidden = false;
   $('raidTop').hidden = false; $('waveTop').hidden = true;
   state = 'play';
-  say(`출격: ${MAPS[mapKey].name}, 방어구 ${ARMOR_TIERS[HL.armor || 0].name}` + (insured ? ', 보험 가입' : ''));
+  say(`출격: ${MAPS[mapKey].name}${raid.coop ? ' (협동전)' : ''}, 방어구 ${ARMOR_TIERS[HL.armor || 0].name}` + (insured ? ', 보험 가입' : ''));
   if (!isTouch) { lockMode = true; requestLock(); }
 }
 let attBackup = null;
 // 증원: 4분마다 투입 (연구 시설: 2차 증원 지휘관, 5차 파쇄기, 나머지는 정예 분대 / 협곡: 매번 정예 분대)
 // 파밍 모드 적 공격력: 처음부터 맵에 있던 적 1.2배, 증원군은 거기에 1.3배 더 (1.56배)
 const ELITE_HP = 1.2, RAID_DMG = 1.2, REINF_DMG = 1.3;
-function enemyDmgMul(e) { return (e.dmgMul || 1) * (mode === 'raid' ? RAID_DMG * (e.reinf ? REINF_DMG : 1) : 1); }
+function enemyDmgMul(e) { return (e.dmgMul || 1) * (mode === 'raid' ? RAID_DMG * (e.reinf ? REINF_DMG : 1) * (raid && raid.coop ? COOP_DMG : 1) : 1); }
+// 협동전 모드: 적 체력과 공격력 1.3배 (드론은 체력 그대로라 한 방 유지)
+const COOP_HP = 1.3, COOP_DMG = 1.3;
+function coopBuff(e) { if (!raid || !raid.coop || e.coopBuffed || e.type === 'drone') return; e.coopBuffed = true; e.hp *= COOP_HP; e.maxHp *= COOP_HP; }
 function makeElite(e) {
   // 정예: 체력 1.2배(드론은 그대로라 증원이어도 한 방), 명중률 상승
   e.elite = true; if (e.type !== 'drone') { e.hp *= ELITE_HP; e.maxHp *= ELITE_HP; } e.spreadMul = 0.6;
@@ -4177,7 +4249,8 @@ function squadList(n, base, maxExtra = 3) {
   const extra = ['grunt', 'brute', 'grunt'].slice(0, Math.min(maxExtra, Math.max(0, n - 1)));
   return base.concat(extra);
 }
-function spawnReinf(n) {
+function spawnReinf(n) { const n0 = enemies.length; spawnReinfUnits(n); for (const e of enemies.slice(n0)) coopBuff(e); }
+function spawnReinfUnits(n) {
   const where = raid.cfg.reinfAt === 'opposite' ? '반대편에서 ' : '';
   if (raid.cfg.reinf === 'squad') {
     // 협곡: 1차 6명부터 매 차수 1명씩 늘어 최대 9명
@@ -4207,7 +4280,8 @@ function spawnReinf(n) {
   }
 }
 // 미니맵: 플레이어가 바라보는 방향이 위쪽
-let radarT = 0;
+let radarT = 0, extShowT = 0;
+function showExits() { if (!raid || state !== 'play') return; extShowT = 6; $('extList').classList.add('show'); }
 function drawRadar(dt) {
   const lv = STASH.fac.intel || 0, cv = $('radar');
   cv.classList.toggle('on', lv >= 1);
@@ -4223,7 +4297,7 @@ function drawRadar(dt) {
   g.beginPath(); g.moveTo(c, 4); g.lineTo(c, S - 4); g.moveTo(4, c); g.lineTo(S - 4, c); g.stroke();
   // 탈출 지점 (3단계)
   const pf = floorOf(P.pos.y - 1.7);
-  if (lv >= 3) for (const ex of raid.cfg.ext) { const [x, y, d] = toScr(ex.x, ex.z); if (d < R * 1.05) { const same = floorOf(ex.y || 0) === pf; g.strokeStyle = same ? '#7dffa0' : 'rgba(125,255,160,.45)'; g.lineWidth = same ? 4 : 2; g.setLineDash(same ? [] : [5, 4]); g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); } }
+  if (lv >= 3) for (const ex of raid.exts) { const [x, y, d] = toScr(ex.x, ex.z); if (d < R * 1.05) { const same = floorOf(ex.y || 0) === pf; g.strokeStyle = same ? '#7dffa0' : 'rgba(125,255,160,.45)'; g.lineWidth = same ? 4 : 2; g.setLineDash(same ? [] : [5, 4]); g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); } }
   // 적: 1단계는 나를 발견한 일반 적, 2단계부터 나를 발견한 보스와 아직 나를 모르는 일반 적
   for (const e of enemies) {
     if (e.dead) continue;
@@ -4270,9 +4344,11 @@ function updateRaid(dt) {
   const pr = ng ? (raid.bag.includes('keycard') ? `<kbd>${kk}</kbd>카드키로 보안 문 열기 (남은 ${raid.keys[0]}회)` : '보안 문이 잠겨 있습니다 (카드키 필요)')
            : nb ? (nb.locked ? `${nb.title || BOX_NAME[nb.type]} (${lockNames(nb)}을(를) 쓰러뜨려야 열림)` : `<kbd>${kk}</kbd>${nb.title || BOX_NAME[nb.type]} ${nb.opened ? '다시 뒤지기' : '열기'}`) : '';
   if ($('prompt').innerHTML !== pr) $('prompt').innerHTML = pr;
-  // 탈출
+  updateDown(dt);
+  if (state !== 'play') return;
+  // 탈출 (쓰러진 상태로는 탈출할 수 없음)
   let inExt = null;
-  for (const ex of raid.cfg.ext) if (Math.hypot(ex.x - P.pos.x, ex.z - P.pos.z) < 2.5 && Math.abs(P.pos.y - 1.7 - (ex.y || 0)) < 1) inExt = ex;
+  for (const ex of raid.exts) if (!P.downed && Math.hypot(ex.x - P.pos.x, ex.z - P.pos.z) < 2.5 && Math.abs(P.pos.y - 1.7 - (ex.y || 0)) < 1) inExt = ex;
   if (inExt) {
     raid.extT += dt; $('extBar').style.display = 'block'; $('extFill').style.width = Math.min(100, raid.extT / 5 * 100) + '%';
     $('extTxt').textContent = `${inExt.name}에서 탈출 중 ${Math.max(0, 5 - raid.extT).toFixed(1)}초`;
@@ -4284,7 +4360,9 @@ function updateRaid(dt) {
   setTxt('rMed', String(raid.bag.filter(i => i === 'medkit').length) + (isTouch ? '' : ' (H)'));
   setTxt('rFrag', String(raid.bag.filter(i => i === 'frag').length) + (isTouch ? '' : ' (G)'));
   setTxt('rRep', String(raid.bag.reduce((a, i) => a + (ITEMS[i].kind === 'repair' ? ITEMS[i].uses : 0), 0)) + '회' + (isTouch ? '' : ' (V)'));
-  let el2 = raid.cfg.ext.map(ex => `${ex.name}${M.floorNames ? ` (${M.floorNames[floorOf(ex.y || 0)]})` : ''} <b>${Math.round(Math.hypot(ex.x - P.pos.x, ex.z - P.pos.z))}m</b>`).join('<br>');
+  // 탈출 지점 이름만 (거리 없이). 층이 있는 맵은 층도 함께
+  let el2 = raid.exts.map(ex => `<b>${ex.name}</b>${M.floorNames ? ` (${M.floorNames[floorOf(ex.y || 0)]})` : ''}`).join('<br>');
+  if (extShowT > 0) { extShowT -= dt; if (extShowT <= 0) $('extList').classList.remove('show'); }
   drawRadar(dt);
   if (hudCache.ext !== el2) { hudCache.ext = el2; $('extList').innerHTML = '탈출 지점<br>' + el2; }
   const boss = enemies.filter(e => e.isBoss && !e.dead && e.alert)
@@ -4301,6 +4379,7 @@ function stashBagItem(r, id, i) {
 }
 function raidEnd(ok, why) {
   if (!raid) return;
+  P.downed = false; $('downBox').hidden = true;
   $('invOv').hidden = true; invBox = null;
   const r = raid;
   state = 'over'; mouseDown = false; aiming = false; aimT = 0; laserLine.visible = laserDot.visible = false; torch.intensity = 0;
@@ -4361,11 +4440,48 @@ const SHOP_CATS = [
 let shopCat = null, stashCat = 'val';
 const STASH_CATS = [{ k:'weapon', name:'무기' }, { k:'att', name:'부착물' }, { k:'heal', name:'회복, 소모품' }, { k:'gear', name:'장비, 특수' }, { k:'val', name:'귀중품' }];
 const STASH_CAT_OF = { weapon:'weapon', scope:'att', laser:'att', med:'heal', repair:'heal', ammobox:'heal', throw:'heal', ammo:'heal', plate:'heal', bag:'gear', key:'gear', val:'val' };
+// 닉네임: 처음 정할 때는 자유, 그 뒤 1회는 대기 없이 바꿀 수 있고, 이후로는 30일에 한 번
+// (지금은 브라우저 저장이라 기록을 지우면 우회 가능. 멀티플레이에서는 서버가 같은 규칙을 검사할 예정)
+const NICK_COOLDOWN = 30 * 24 * 3600 * 1000, NICK_RE = /^[가-힣A-Za-z0-9_]{2,12}$/;
+let nickEdit = false, nickErr = '';
+function nickWait() {
+  if (!STASH.nick || (STASH.nickFree || 0) > 0) return 0;
+  return Math.max(0, (STASH.nickAt || 0) + NICK_COOLDOWN - Date.now());
+}
+function setNick(v) {
+  v = (v || '').trim();
+  if (!NICK_RE.test(v)) return '2~12자의 한글, 영문, 숫자, _ 만 쓸 수 있습니다';
+  if (v === STASH.nick) return '지금 닉네임과 같습니다';
+  if (STASH.nick) {
+    if ((STASH.nickFree || 0) > 0) STASH.nickFree--;
+    else if (nickWait() > 0) return '아직 바꿀 수 없습니다';
+  } else STASH.nickFree = 1;
+  STASH.nick = v; STASH.nickAt = Date.now(); saveStash();
+  return '';
+}
+function renderNick() {
+  const el = $('hNick'), w = nickWait();
+  if (!STASH.nick || nickEdit) {
+    const note = !STASH.nick ? '처음 정한 뒤 한 번은 바로 바꿀 수 있고, 그 뒤로는 30일에 한 번 바꿀 수 있습니다' : (STASH.nickFree || 0) > 0 ? '이번 변경은 대기 없이 가능 (다음부터 30일에 한 번)' : '바꾸면 30일 동안 다시 바꿀 수 없습니다';
+    el.innerHTML = `<span>닉네임</span><input id="nickIn" maxlength="12" placeholder="2~12자" value="${STASH.nick || ''}"><button class="opt" id="nickOk">확인</button>${STASH.nick ? '<button class="opt" id="nickNo">취소</button>' : ''}<span class="hint">${note}</span>${nickErr ? `<span class="err">${nickErr}</span>` : ''}`;
+    const go = () => { nickErr = setNick($('nickIn').value); if (!nickErr) nickEdit = false; renderNick(); };
+    $('nickOk').onclick = go;
+    $('nickIn').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') go(); };
+    if ($('nickNo')) $('nickNo').onclick = () => { nickEdit = false; nickErr = ''; renderNick(); };
+    return;
+  }
+  const days = Math.ceil(w / 86400000);
+  el.innerHTML = `<span>닉네임</span><b>${STASH.nick}</b><button class="opt" id="nickEditBtn" ${w > 0 ? 'disabled' : ''}>변경</button><span class="hint">${w > 0 ? `${days}일 뒤 변경 가능` : (STASH.nickFree || 0) > 0 ? '1회 무료 변경 가능' : '변경 가능'}</span>`;
+  $('nickEditBtn').onclick = () => { if (nickWait() > 0) return; nickEdit = true; nickErr = ''; renderNick(); };
+}
 function renderHideout() {
+  renderNick();
   const it = STASH.items, has = id => (it[id] || 0) > 0;
   $('credTxt').textContent = STASH.credits.toLocaleString();
   const total = Object.entries(it).reduce((a, [id, n]) => a + (ITEMS[id] ? ITEMS[id].value * n : 0), 0) + STASH.guns.reduce((a, g) => a + gunValue(g), 0) + STASH.keys.reduce((a, u) => a + keyValue(u), 0);
   $('stashVal').textContent = `(창고 가치 ${total.toLocaleString()})`;
+  $('hModes').innerHTML = [[false, '일반 모드'], [true, '협동전 모드']].map(([v, n]) => `<button class="opt" data-coop="${v ? 1 : 0}" aria-pressed="${!!HL.coop === v}">${n}</button>`).join('')
+    + `<span class="hint">${HL.coop ? `적 체력 ${COOP_HP}배, 공격력 ${COOP_DMG}배. 쓰러지면 ${BLEED_T}초 안에 팀원이 살릴 수 있음. 팀킬 가능` : '기본 난이도'}</span>`;
   $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}">${MAPS[k].name}</button>`).join('');
   const gun = STASH.guns.find(g => g.uid === HL.gun) || null; if (!gun) HL.gun = null;
   const mainW = gun ? ITEMS[gun.id].wi : null;
@@ -4468,6 +4584,7 @@ function renderHideout() {
   on('[data-stashcat]', b => { stashCat = b.dataset.stashcat; });
   on('[data-sellvals]', () => { for (const id of Object.keys(STASH.items)) if (ITEMS[id] && ITEMS[id].kind === 'val') { STASH.credits += sellPrice(id) * STASH.items[id]; delete STASH.items[id]; } saveStash(); SND.play('clear'); });
   on('[data-shopback]', () => { shopCat = null; });
+  on('[data-coop]', b => { HL.coop = b.dataset.coop === '1'; });
   on('[data-map]', b => { if (!RAID_MAPS.includes(b.dataset.map)) return; raidMap = b.dataset.map; buildLevel(raidMap); idle = 0; try { localStorage.setItem('scrapyard-rmap', raidMap); } catch (_) {} });
   on('[data-gun]', b => { HL.gun = b.dataset.gun ? +b.dataset.gun : null; });
   on('[data-gun2]', b => { HL.gun2 = b.dataset.gun2 ? +b.dataset.gun2 : null; });
@@ -4667,7 +4784,7 @@ function begin() {
   $('waveOv').hidden = true;
   resetWeaponStats();
   buildLevel(mapChoice); setVault(false);
-  mode = 'wave'; clearRaid(); $('raidTop').hidden = true; $('waveTop').hidden = false; $('extList').innerHTML = ''; $('prompt').textContent = '';
+  mode = 'wave'; clearRaid(); $('extList').classList.remove('show'); extShowT = 0; $('raidTop').hidden = true; $('waveTop').hidden = false; $('extList').innerHTML = ''; $('prompt').textContent = '';
   loadout = [0, mainChoice];
   loadout.forEach(applyAttachments); laserOn = true; lightOn = true;
   for (const w of loadout) applyUpgradesTo(w, { rec:5, rel:5, mag:5 });
