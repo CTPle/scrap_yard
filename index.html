@@ -2333,7 +2333,9 @@ function blastReach(p, body, headUp) {
   blastT.copy(body); blastT.y += headUp;
   return losTo(blastO, blastT);
 }
-function explode(p, dmgIn, Rin, selfMax = 35) {
+// 자기 폭발 피해: 적과 같은 반경, 같은 거리 감소(가장자리에서 40%)로, 적이 받는 피해의 35%
+const SELF_BLAST = 0.35;
+function explode(p, dmgIn, Rin) {
   SND.play('boom'); shakeAmt = Math.max(shakeAmt, 0.3);
   if (mode === 'raid') alertAround(p, 30);
   burst(p, '#f0a530', 18, 7); burst(p, '#ffe2a0', 8, 5); burst(p, '#3a3530', 10, 4);
@@ -2349,7 +2351,7 @@ function explode(p, dmgIn, Rin, selfMax = 35) {
     if (d < R + e.r * 0.5 && blastReach(p, c, 0.6)) { hit = true; if (damageEnemy(e, dmg * (1 - Math.min(1, d / R) * 0.6) * (e.type === 'jugg' ? 0.5 : 1), c.sub(p).normalize())) kill = true; }
   }
   const pb = new THREE.Vector3(P.pos.x, P.pos.y - 0.8, P.pos.z), pd = pb.distanceTo(p);
-  if (pd < R * 0.75 && blastReach(p, pb, 0.8)) hurtPlayer(Math.round(selfMax * (1 - pd / (R * 0.75))));
+  if (pd < R && blastReach(p, pb, 0.8)) hurtPlayer(Math.round(dmg * SELF_BLAST * (1 - Math.min(1, pd / R) * 0.6)));
   if (hit) { showHit(kill); SND.play('hit'); }
 }
 const FRAG_DMG = 320, FRAG_R = 5, FRAG_FUSE = 2;
@@ -2378,7 +2380,7 @@ function updateFrags(dt) {
     }
     if (p.y < 0.12) { p.y = 0.12; if (fr.v.y < 0) fr.v.y *= -0.35; fr.v.x *= 0.8; fr.v.z *= 0.8; }
     fr.m.rotation.x += dt * 9; fr.m.rotation.z += dt * 6;
-    if (fr.t <= 0) { explode(p.clone().setY(Math.max(p.y, 0.3)), FRAG_DMG, FRAG_R, 60); scene.remove(fr.m); fr.dead = true; }
+    if (fr.t <= 0) { explode(p.clone().setY(Math.max(p.y, 0.3)), FRAG_DMG, FRAG_R); scene.remove(fr.m); fr.dead = true; }
   }
   frags = frags.filter(fr => !fr.dead);
 }
@@ -2397,7 +2399,7 @@ function updateNades(dt) {
     if (boom) {
       if (insideSolid(pos)) pos.addScaledVector(n.v.clone().normalize(), -0.3);
       pos.y = Math.max(pos.y, 0.15);
-      explode(pos.clone(), undefined, undefined, mode === 'raid' ? WEAPONS[3].dmg * 0.3 : 35); n.dead = true;
+      explode(pos.clone()); n.dead = true;
     }
   }
   nades = nades.filter(n => { if (n.dead) scene.remove(n.m); return !n.dead; });
@@ -2673,7 +2675,7 @@ function juggMissiles(e) {
     const m = new THREE.Mesh(BOX, glow('#ff8a3a')); m.scale.set(0.15, 0.15, 0.5); m.position.copy(from); scene.add(m);
     const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3, 28), new THREE.MeshBasicMaterial({ color:'#ff8a3a', transparent:true, opacity:0.6, side:THREE.DoubleSide, depthWrite:false }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(target.x, target.y + 0.05, target.z); scene.add(ring);
-    eNades.push({ m, v, t:T, ring, target, r:3.2, dmg:38, missile:true });
+    eNades.push({ m, v, t:T, ring, target, r:3.2, dmg:38 * enemyDmgMul(e), missile:true });
   }
 }
 function bossNade(e) {
@@ -2684,7 +2686,7 @@ function bossNade(e) {
   const m = new THREE.Mesh(SPH, std('#3a3d42', { metalness:0.6 })); m.scale.setScalar(0.18); m.position.copy(from); scene.add(m);
   const ring = new THREE.Mesh(new THREE.RingGeometry(3.6, 4, 32), new THREE.MeshBasicMaterial({ color:'#ff3a2e', transparent:true, opacity:0.6, side:THREE.DoubleSide, depthWrite:false }));
   ring.rotation.x = -Math.PI / 2; ring.position.set(target.x, target.y + 0.05, target.z); scene.add(ring);
-  eNades.push({ m, v, t:T, ring, target });
+  eNades.push({ m, v, t:T, ring, target, dmg:65 * enemyDmgMul(e) });
   SND.play('launcher');
 }
 function updateENades(dt) {
@@ -2719,7 +2721,7 @@ function enemyShoot(e, from, speed, dmg, col, spread = 0.03) {
   spread *= AI.spreadMul * (e.spreadMul || 1);
   dir.x += rand(-spread, spread); dir.y += rand(-spread * 0.6, spread * 0.6); dir.z += rand(-spread, spread); dir.normalize();
   const m = new THREE.Mesh(BOX, glow(col)); m.scale.set(0.07, 0.07, 0.9); m.position.copy(from); m.lookAt(from.clone().add(dir));
-  scene.add(m); shots.push({ m, v:dir.multiplyScalar(speed * AI.shotMul), dmg:dmg * (e.dmgMul || 1), t:AI.life });
+  scene.add(m); shots.push({ m, v:dir.multiplyScalar(speed * AI.shotMul), dmg:dmg * enemyDmgMul(e), t:AI.life });
   const dist = from.distanceTo(P.pos); SND.play('eshot', clamp(1.4 - dist / 30, 0.2, 1));
 }
 function navPoint(e) {
@@ -2882,7 +2884,7 @@ function updateEnemies(dt) {
         } else if (e.dash > 0) {
           e.dash -= dt; mx = e.dx; mz = e.dz;
           if (dist < e.r + 1.0 && !e.hitDash) {
-            e.hitDash = true; hurtPlayer(45); shakeAmt = Math.max(shakeAmt, 0.4);
+            e.hitDash = true; hurtPlayer(Math.round(45 * enemyDmgMul(e))); shakeAmt = Math.max(shakeAmt, 0.4);
             P.pos.x += e.dx * 2.2; P.pos.z += e.dz * 2.2; pushOut(P.pos, 0.4, P.pos.y - 1.7);
           }
           if (e.dash <= 0) { e.hitDash = false; e.dashCd = rand(6, 9); }
@@ -3330,7 +3332,7 @@ const RAID = {
     loot:[[-4, -27, 'weapon'], [4, 27, 'misc'], [-27, 4, 'tech'], [27, -4, 'misc'], [-20, -34, 'weapon'], [20, 34, 'tech'], [31, -26, 'misc'],
           [-31, 26, 'weapon'], [-10, 24.5, 'misc'], [12, -24.5, 'med'], [-38, -17, 'misc'], [38, 17, 'med'], [2, -2, 'med', 3.2]],
     ext:[{ name:'화물 트럭', x:-44, z:-44 }, { name:'정문', x:44, z:44 }], boss:[28, -36], jugg:[36, 26] },
-  lab:{ time:1080, minDist:22, enemies:18, reinfAt:'opposite', bossMul:{ hp:1.6, dmg:1.35, spd:1.25, leash:32 }, alertR:24,
+  lab:{ time:1500, minDist:22, enemies:18, reinfAt:'opposite', bossMul:{ hp:1.6, dmg:1.35, spd:1.25, leash:32 }, alertR:24,
     // [x, z, 상자 종류, 바닥 높이] 지하 3층 0, 지하 2층 6, 지하 1층 12
     loot:[
       // 지하 2층: 중앙 연구동 (기존 방)
@@ -3353,7 +3355,7 @@ const RAID = {
       [14, -44, 'tech', 0], [25, -27, 'tech', 0], [14, -6, 'docs', 0], [36, -6, 'tech', 0],
       [8, 8, 'tech', 0], [24, 44, 'misc', 0], [4, 24, 'tech', 2.4], [28.5, 6.5, 'docs', 2.4], [44, 14, 'weapon', 0]],
     ext:[{ name:'비상 계단', x:-37, z:6, y:12 }, { name:'화물 엘리베이터', x:-42, z:42, y:0 }, { name:'배수 터널', x:44, z:-44, y:0 }], boss:[40, 30, 0] },
-  canyon:{ time:900, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
+  canyon:{ time:1200, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
     loot:[[CX(0, 284), CZ(284), 'med', 3.2], [CX(-10, 250), CZ(250), 'misc'], [CX(10, 232), CZ(232), 'misc'],
           [CX(-11, 198), CZ(198), 'weapon'], [CX(11, 181), CZ(181), 'misc'], [CX(-11, 181), CZ(181), 'tech'],
           [CX(-6, 134), CZ(134), 'misc'], [CX(11, 102.5), CZ(102.5), 'weapon'], [CX(-11, 67.5), CZ(67.5), 'tech'], [CX(5, 18.5), CZ(18.5), 'misc'],
@@ -4090,7 +4092,7 @@ function beginRaid() {
   const AT = ARMOR_TIERS[HL.armor || 0]; P.ar = P.arMax = AT.pts; P.arAbs = AT.abs;
   for (const w of loadout) if (w) ammo[w].res = WEAPONS[w].charge ? Infinity : WEAPONS[w].mag * 2;
   const cfg = RAID[mapKey];
-  raid = { queues:{}, ammo:'std', rwave:0, t:cfg.time, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:120, warned:false, map:mapKey, cap };
+  raid = { queues:{}, ammo:'std', rwave:0, t:cfg.time, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:REINF_GAP, warned:false, map:mapKey, cap };
   // 주무기 탄약 묶음 구성
   // 특수 탄창은 특수탄을 쓸 수 있는 첫 주무기(2번 우선)에 들어감
   { const ms = mains(), tgt = ms.find(w => !WEAPONS[w].charge && WEAPONS[w].kind !== 'grenade');
@@ -4135,9 +4137,13 @@ function beginRaid() {
   if (!isTouch) { lockMode = true; requestLock(); }
 }
 let attBackup = null;
-// 증원: 2분에 1차 (증원 지휘관과 정예병), 4분에 2차 최종 (파쇄기와 정예병)
+// 증원: 4분마다 투입 (연구 시설: 2차 증원 지휘관, 5차 파쇄기, 나머지는 정예 분대 / 협곡: 매번 정예 분대)
+// 파밍 모드 적 공격력: 처음부터 맵에 있던 적 1.2배, 증원군은 거기에 1.3배 더 (1.56배)
+const ELITE_HP = 1.2, RAID_DMG = 1.2, REINF_DMG = 1.3;
+function enemyDmgMul(e) { return (e.dmgMul || 1) * (mode === 'raid' ? RAID_DMG * (e.reinf ? REINF_DMG : 1) : 1); }
 function makeElite(e) {
-  e.elite = true; e.hp *= 1.8; e.maxHp *= 1.8; e.spreadMul = 0.6;
+  // 정예: 체력 1.2배(드론은 그대로라 증원이어도 한 방), 명중률 상승
+  e.elite = true; if (e.type !== 'drone') { e.hp *= ELITE_HP; e.maxHp *= ELITE_HP; } e.spreadMul = 0.6;
   if (e.type === 'brute') e.mats[2].color.set('#2f6fb0'); else e.mats[0].color.set('#2f5f9a');
 }
 function farSpawn() { return SPAWNS.slice().sort((a, b) => Math.hypot(b[0] - P.pos.x, b[1] - P.pos.z) - Math.hypot(a[0] - P.pos.x, a[1] - P.pos.z))[0]; }
@@ -4165,24 +4171,37 @@ function reinfUnit(t, far) {
   if (raid.cfg.fastHunt) e.hunter = true; // 발견 전에는 빠르게 추적, 교전 중에는 원래 속도
   return e;
 }
+// 증원: 4분마다 투입. 차수가 오를수록 분대가 1명씩 커짐 (최대 3명 추가)
+const REINF_GAP = 240, CMDR_WAVE = 2, JUGG_WAVE = 5;
+function squadList(n, base, maxExtra = 3) {
+  const extra = ['grunt', 'brute', 'grunt'].slice(0, Math.min(maxExtra, Math.max(0, n - 1)));
+  return base.concat(extra);
+}
 function spawnReinf(n) {
   const where = raid.cfg.reinfAt === 'opposite' ? '반대편에서 ' : '';
   if (raid.cfg.reinf === 'squad') {
-    const list = n === 1 ? ['grunt', 'grunt', 'brute', 'drone'] : ['brute', 'brute', 'grunt', 'grunt', 'drone'];
-    for (const t of list) makeElite(reinfUnit(t));
+    // 협곡: 1차 6명부터 매 차수 1명씩 늘어 최대 9명
+    for (const t of squadList(n, ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone'])) makeElite(reinfUnit(t));
     SND.play('alarm'); say(`${where}${n}차 정예 증원 분대가 투입되었습니다`, 1);
     return;
   }
-  if (n === 1) {
-    // 1차: 증원 지휘관과 정예병 4명
-    for (const t of ['grunt', 'grunt', 'brute', 'drone']) makeElite(reinfUnit(t));
+  if (n !== CMDR_WAVE && n !== JUGG_WAVE) {
+    // 지휘관, 파쇄기 차수가 아니면 정예 분대: 1차 6명, 3차 7명, 4차 이후 8명
+    const k = [1, 2, 3, 4, 5, 6, 7, 8].filter(i => i <= n && i !== CMDR_WAVE && i !== JUGG_WAVE).length;
+    for (const t of squadList(k, ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone'], 2)) makeElite(reinfUnit(t));
+    SND.play('alarm'); say(`${where}${n}차 정예 증원 분대가 투입되었습니다`);
+    return;
+  }
+  if (n === CMDR_WAVE) {
+    // 2차: 증원 지휘관과 정예병 6명
+    for (const t of ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone']) makeElite(reinfUnit(t));
     const c = reinfUnit('boss', true);
     c.cmdr = true; c.name = '증원 지휘관'; c.hp = c.maxHp = 1500 * (raid.cfg.bossMul ? raid.cfg.bossMul.hp : 1);
     c.mats[2].color.set('#c9a21a'); c.mats[0].color.set('#1e2a3a');
     SND.play('roar'); say(`${where}증원 지휘관 부대가 투입되었습니다`);
   } else {
-    // 2차 (최종): 파쇄기와 정예 소총병 2명
-    for (const t of ['grunt', 'grunt']) makeElite(reinfUnit(t));
+    // 5차: 파쇄기와 정예병 4명
+    for (const t of ['grunt', 'grunt', 'grunt', 'brute']) makeElite(reinfUnit(t));
     reinfUnit('jugg', true);
     SND.play('roar'); setTimeout(() => SND.play('roar'), 600); say(`${where}파쇄기가 투입되었습니다`);
   }
@@ -4224,22 +4243,24 @@ function drawRadar(dt) {
 }
 function updateRaid(dt) {
   raid.t -= dt;
-  if (raid.t <= 0) { raidEnd(false, '시간 초과로 실종되었습니다'); return; }
+  if (raid.t <= 0) { raidEnd(false, '제한 시간 안에 탈출하지 못해 사망했습니다'); return; }
   const el = raid.cfg.time - raid.t;
   const warnAt = STASH.fac.intel >= 2 ? 60 : 30;
   const nextWave = raid.rwave + 1;
   if (!raid.warned && el >= raid.nextReinf - warnAt) {
     raid.warned = true; SND.play('alarm');
     if (raid.cfg.reinf === 'squad') say(`경보: ${warnAt}초 뒤 ${nextWave}차 정예 증원 분대가 투입됩니다`);
-    else if (nextWave >= 2) { setTimeout(() => SND.play('alarm'), 1700); say(`최종 경보: ${warnAt}초 뒤 파쇄기가 투입됩니다`); }
-    else say(`경보: ${warnAt}초 뒤 증원 지휘관 부대가 투입됩니다`);
+    else if (nextWave === JUGG_WAVE) { setTimeout(() => SND.play('alarm'), 1700); say(`경보: ${warnAt}초 뒤 파쇄기가 투입됩니다`); }
+    else if (nextWave === CMDR_WAVE) say(`경보: ${warnAt}초 뒤 증원 지휘관 부대가 투입됩니다`);
+    else say(`경보: ${warnAt}초 뒤 ${nextWave}차 정예 증원 분대가 투입됩니다`);
   }
   P.calm += dt;
   const ml = STASH.fac.med;
   if (ml >= 1 && P.calm > [0, 6, 5, 3][ml] && P.hp < P.maxHp) P.hp = Math.min(P.maxHp, P.hp + [0, 0.6, 1.2, 2.4][ml] * dt);
   if (el >= raid.nextReinf) {
     raid.rwave++; spawnReinf(raid.rwave);
-    raid.nextReinf = raid.rwave >= 2 ? Infinity : raid.nextReinf + 120; raid.warned = false;
+    // 4분마다 계속 투입. 남은 시간 안에 다음 투입이 없으면 끝
+    raid.nextReinf += REINF_GAP; if (raid.nextReinf >= raid.cfg.time) raid.nextReinf = Infinity; raid.warned = false;
   }
   if (isFinite(raid.nextReinf)) { const rs = Math.max(0, Math.ceil(raid.nextReinf - el)); setTxt('rReinf', `${Math.floor(rs / 60)}:${String(rs % 60).padStart(2, '0')}`); }
   else setTxt('rReinf', '없음');
