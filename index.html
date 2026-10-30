@@ -229,6 +229,15 @@ body.dropping #dropHint{ display:flex; }
 #hPack .igrid{ grid-template-columns:repeat(auto-fill, 58px); grid-auto-rows:58px; }
 #deployMsg{ color:#ff8a6a; }
 @media (max-width: 600px){ .packgrid{ grid-template-columns:1fr; } }
+#bloodOv{ position:absolute; inset:0; pointer-events:none; opacity:0;
+  background:
+    radial-gradient(ellipse 38% 30% at 0% 0%, rgba(110,0,0,.85), rgba(110,0,0,0) 70%),
+    radial-gradient(ellipse 30% 42% at 100% 12%, rgba(95,0,0,.8), rgba(95,0,0,0) 70%),
+    radial-gradient(ellipse 42% 28% at 8% 100%, rgba(120,4,0,.85), rgba(120,4,0,0) 70%),
+    radial-gradient(ellipse 34% 36% at 96% 96%, rgba(100,0,0,.85), rgba(100,0,0,0) 70%),
+    radial-gradient(ellipse 18% 12% at 30% 6%, rgba(130,10,6,.6), rgba(130,10,6,0) 70%),
+    radial-gradient(ellipse 14% 20% at 70% 94%, rgba(130,10,6,.55), rgba(130,10,6,0) 70%),
+    radial-gradient(ellipse at center, rgba(40,0,0,0) 50%, rgba(40,0,0,.55) 100%); }
 #hitEdge{ position:absolute; inset:0; pointer-events:none; opacity:0; box-shadow:inset 0 0 0 5px rgba(255,40,28,.95), inset 0 0 90px 24px rgba(255,30,20,.55); }
 #vignette{ position:absolute; inset:0; pointer-events:none; opacity:0; background:radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(190,30,20,.65) 100%); }
 .overlay{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:var(--veil); padding:24px; overflow-y:auto; z-index:5; }
@@ -380,6 +389,7 @@ body.is-raid .waveonly{ display:none; }
     </div>
   </div>
   <div id="vignette"></div>
+  <div id="bloodOv"></div>
   <div id="hitEdge"></div>
 
   <div id="touch">
@@ -2037,7 +2047,7 @@ const EYE = new THREE.Vector3();
 let chargeT = 0, railRelease = false, zoomCur = 1, recoilPitch = 0, recoilYaw = 0, shotAgo = 9;
 let mode = 'wave';
 let loadout = [0, 2], slot = 1, aiming = false, aimT = 0, mainChoice = 2;
-let hitEdgeT = 0;
+let hitEdgeT = 0, lowHpK = 0;
 let ammo, weapon, lastWeapon, fireCd, reloading, switchT, recoil, kick, dmgFlash, score, kills, wave, waveState, waveT, queue, spawnT;
 let enemies = [], shots = [], pickups = [], parts = [], tracers = [], nades = [], frags = [], rings = [], shakeAmt = 0, fragCd = 0;
 let msgT = 0;
@@ -3287,6 +3297,14 @@ function updateFx(dt) {
   if (hitT > 0) { hitT -= dt; if (hitT <= 0) $('hitmark').style.opacity = 0; }
   dmgFlash = Math.max(0, dmgFlash - dt * 1.6);
   hitEdgeT = Math.max(0, hitEdgeT - dt * 2.2); $('hitEdge').style.opacity = hitEdgeT;
+  // 체력 30% 이하: 화면이 흐려지고 가장자리에 피가 번짐 (체력이 낮을수록, 쓰러지면 가장 심함)
+  { const r = P.downed ? 0 : P.hp / (P.maxHp || 100), k = P.downed ? 1 : r < 0.3 ? (0.3 - r) / 0.3 : 0;
+    const want = Math.round(k * 20) / 20;
+    if (want !== lowHpK) {
+      lowHpK = want;
+      renderer.domElement.style.filter = want > 0 ? `blur(${(0.6 + want * 2.4).toFixed(2)}px) saturate(${(1 - want * 0.45).toFixed(2)})` : '';
+      $('bloodOv').style.opacity = want > 0 ? (0.35 + want * 0.6).toFixed(2) : 0;
+    } }
   $('vignette').style.opacity = Math.max(dmgFlash, P.hp < 30 ? 0.35 + Math.sin(performance.now() / 250) * 0.1 : 0);
 }
 
@@ -4587,7 +4605,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.1.1';
+const GAME_VER = 'v1.1.2';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -5459,6 +5477,8 @@ function frame(now) {
     idle += dt;
     M.titleCam(idle);
   }
+  // 출격이 끝나면 체력 낮을 때의 흐림, 핏자국 효과를 지움
+  if (lowHpK && state !== 'play' && state !== 'inv' && state !== 'paused') { lowHpK = 0; renderer.domElement.style.filter = ''; $('bloodOv').style.opacity = 0; $('hitEdge').style.opacity = 0; hitEdgeT = 0; }
   if (state === 'title') updateFloors(dt, camera.position.x, camera.position.y, camera.position.z);
   else updateFloors(dt, P.pos.x, P.pos.y, P.pos.z);
   renderer.clear();
