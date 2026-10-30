@@ -4535,7 +4535,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.0.1';
+const GAME_VER = 'v1.0.2';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4859,26 +4859,26 @@ function netStartRaid() {
   if (raid && state === 'play') raid.coopN = r.players.length;
   else { NET.inRaid = false; netSend({ t:'lobby' }); renderHideout(); }
 }
-// 방 목록은 방 밖에 있을 때만 5초마다 새로 받음
+// 파티 모집 목록은 파티 밖에 있을 때만 5초마다 새로 받음
 setInterval(() => { if (NET.st === 'on' && !NET.room && HL.coop && !$('hideOv').hidden) netSend({ t:'list' }); }, 5000);
 function renderRoom() {
   const el = $('hRoom');
   el.hidden = !HL.coop;
   if (!HL.coop) return;
-  let h = `<div class="roomhead"><b>협동전 방</b></div>`;
-  if (!STASH.nick) h += '<p class="hint">협동전 방을 쓰려면 위에서 닉네임을 먼저 정해 주십시오</p>';
+  let h = `<div class="roomhead"><b>협동전 파티</b></div>`;
+  if (!STASH.nick) h += '<p class="hint">파티를 꾸리려면 위에서 닉네임을 먼저 정해 주십시오</p>';
   else if (NET.st !== 'on') {
     h += `<div class="opts"><span class="hint">${NET.ws ? '서버에 연결하는 중입니다. 서버가 잠들어 있었다면 1분쯤 걸립니다' : escH(NET.err || '서버에 연결되어 있지 않습니다')}</span>${NET.ws ? '' : '<button class="opt" id="netRe">다시 연결</button>'}</div>`;
   } else if (NET.room) {
     const r = NET.room, host = r.host === NET.id;
-    h += `<div class="roominfo">${r.priv ? '비밀방' : '공개방'} 코드 <span class="code">${escH(r.code)}</span> · ${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)} · ${r.players.length}/${MAX_ROOM}명</div>`
-      + `<div class="roomplayers">${r.players.map(p => `<span class="${p.id === r.host ? 'host' : ''}">${escH(p.nick)}${p.id === r.host ? ' (방장)' : ''}${p.id === NET.id ? ' (나)' : ''}${p.ver !== GAME_VER ? ` <b class="verbad">${escH(p.ver || '버전 알 수 없음')}</b>` : ''}</span>`).join('')}</div>`
-      + (r.players.some(p => p.ver !== GAME_VER) ? `<p class="err">버전이 다른 사람이 있습니다 (내 버전 ${GAME_VER}). 버전이 다르면 서로 맞지 않을 수 있으니, 새로고침(Ctrl + F5)한 뒤 다시 들어와 주십시오.</p>` : '')
-      + `<div class="opts"><button class="opt" id="roomLeave">방 나가기</button><span class="hint">${r.started ? '방원이 아직 출격 중입니다. 모두 돌아오면 다시 출격할 수 있습니다' : host ? '아래 출격 버튼을 누르면 방 전체가 함께 출격합니다' : '방장이 출격을 시작하면 함께 출격합니다'}</span></div>`;
+    h += `<div class="roominfo">${r.priv ? '비공개 파티' : '공개 파티'} · 초대 코드 <span class="code">${escH(r.code)}</span> · ${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)} · ${r.players.length}/${MAX_ROOM}명</div>`
+      + `<div class="roomplayers">${r.players.map(p => `<span class="${p.id === r.host ? 'host' : ''}">${escH(p.nick)}${p.id === r.host ? ' (파티장)' : ''}${p.id === NET.id ? ' (나)' : ''}${p.ver !== GAME_VER ? ` <b class="verbad">${escH(p.ver || '버전 알 수 없음')}</b>` : ''}</span>`).join('')}</div>`
+      + (r.players.some(p => p.ver !== GAME_VER) ? `<p class="err">버전이 다른 사람이 있습니다 (내 버전 ${GAME_VER}). 버전이 다르면 서로 맞지 않을 수 있으니, 새로고침(Ctrl + F5)한 뒤 다시 참가해 주십시오.</p>` : '')
+      + `<div class="opts"><button class="opt" id="roomLeave">파티 나가기</button><span class="hint">${r.started ? '파티원이 아직 출격 중입니다. 모두 돌아오면 다시 출격할 수 있습니다' : host ? '아래 출격 버튼을 누르면 파티 전체가 함께 출격합니다' : '파티장이 출격을 시작하면 함께 출격합니다'}</span></div>`;
   } else {
-    h += `<div class="opts"><button class="opt" id="roomMake">방 만들기 (${MAPS[raidMap].name})</button><button class="opt" id="roomMakePriv">비밀방 만들기</button><button class="opt" id="roomRefresh">새로고침</button></div>`
-      + `<div class="opts" style="margin-top:6px"><input id="roomCode" maxlength="4" placeholder="방 코드"><button class="opt" id="roomJoinCode">비밀방 입장</button><span class="hint">비밀방은 목록에 보이지 않고, 방장에게 받은 코드로만 들어갈 수 있습니다</span></div>`
-      + `<div class="roomlist">${NET.list.length ? NET.list.map(r => `<div class="roomrow"><span class="code">${r.code}</span><span>${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)}</span><span>${r.n | 0}/${r.max | 0}명</span><button class="opt" data-joinroom="${r.code}" ${r.n >= r.max ? 'disabled' : ''}>입장</button></div>`).join('') : '<p class="hint">열려 있는 협동전 방이 없습니다. 방을 만들어 보십시오</p>'}</div>`;
+    h += `<div class="opts"><button class="opt" id="roomMake">공개 파티 꾸리기 (${MAPS[raidMap].name})</button><button class="opt" id="roomMakePriv">비공개 파티 꾸리기</button><button class="opt" id="roomRefresh">새로고침</button></div>`
+      + `<div class="opts" style="margin-top:6px"><input id="roomCode" maxlength="4" placeholder="초대 코드"><button class="opt" id="roomJoinCode">초대 코드로 참가</button><span class="hint">비공개 파티는 모집 목록에 보이지 않고, 파티장에게 받은 초대 코드로만 참가할 수 있습니다</span></div>`
+      + `<div class="roomlist">${NET.list.length ? NET.list.map(r => `<div class="roomrow"><span class="code">${r.code}</span><span>${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)}</span><span>${r.n | 0}/${r.max | 0}명</span><button class="opt" data-joinroom="${r.code}" ${r.n >= r.max ? 'disabled' : ''}>참가</button></div>`).join('') : '<p class="hint">모집 중인 파티가 없습니다. 파티를 꾸려 보십시오</p>'}</div>`;
   }
   if (NET.err && NET.st === 'on') h += `<p class="err">${escH(NET.err)}</p>`;
   el.innerHTML = h;
@@ -4888,7 +4888,7 @@ function renderRoom() {
   if (b('roomMake')) b('roomMake').onclick = () => { NET.err = ''; netSend({ t:'create', map:raidMap, mode:'coop' }); };
   if (b('roomMakePriv')) b('roomMakePriv').onclick = () => { NET.err = ''; netSend({ t:'create', map:raidMap, mode:'coop', priv:true }); };
   if (b('roomRefresh')) b('roomRefresh').onclick = () => netSend({ t:'list' });
-  const joinCode = () => { const c = b('roomCode').value.trim().toUpperCase(); if (!/^[A-Z0-9]{4}$/.test(c)) { NET.err = '방 코드는 4글자입니다'; renderRoom(); return; } NET.err = ''; netSend({ t:'join', code:c }); };
+  const joinCode = () => { const c = b('roomCode').value.trim().toUpperCase(); if (!/^[A-Z0-9]{4}$/.test(c)) { NET.err = '초대 코드는 4글자입니다'; renderRoom(); return; } NET.err = ''; netSend({ t:'join', code:c }); };
   if (b('roomJoinCode')) b('roomJoinCode').onclick = joinCode;
   if (b('roomCode')) b('roomCode').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') joinCode(); };
   el.querySelectorAll('[data-joinroom]').forEach(x => x.onclick = () => { NET.err = ''; netSend({ t:'join', code:x.dataset.joinroom }); });
@@ -4903,7 +4903,7 @@ function renderHideout() {
     + `<button class="coop" data-coop="1" aria-pressed="${!!HL.coop}">협동전 모드</button>`;
   const roomLock = HL.coop && NET.room;
   $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name}</button>`).join('')
-    + (roomLock ? '<span class="hint">방에 들어가 있는 동안에는 방의 맵으로 고정됩니다</span>' : '');
+    + (roomLock ? '<span class="hint">파티에 있는 동안에는 파티의 맵으로 고정됩니다</span>' : '');
   renderRoom();
   if (HL.coop && STASH.nick && !NET.ws && !NET.retry) netConnect();
   const gun = STASH.guns.find(g => g.uid === HL.gun) || null; if (!gun) HL.gun = null;
@@ -5051,8 +5051,8 @@ $('hideBack').addEventListener('click', () => { if (NET.room) netSend({ t:'leave
 $('deployBtn').addEventListener('click', () => {
   if (HL.coop) {
     // 협동전: 방장이 누르면 방 전체가 출격 (서버가 시작 신호를 보냄)
-    if (!NET.room) { $('deployMsg').textContent = '협동전은 방을 만들거나 입장한 뒤 출격할 수 있습니다'; return; }
-    if (NET.room.host !== NET.id) { $('deployMsg').textContent = '방장만 출격을 시작할 수 있습니다'; return; }
+    if (!NET.room) { $('deployMsg').textContent = '협동전은 파티를 꾸리거나 참가한 뒤 출격할 수 있습니다'; return; }
+    if (NET.room.host !== NET.id) { $('deployMsg').textContent = '파티장만 출격을 시작할 수 있습니다'; return; }
     if (STASH.credits < deployCost()) { $('deployMsg').textContent = `출격 비용 ${deployCost().toLocaleString()} 크레딧이 부족합니다`; return; }
     netSend({ t:'start' }); return;
   }

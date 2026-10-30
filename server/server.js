@@ -122,7 +122,7 @@ function onMessage(c, msg) {
 
   if (t === 'create') {
     if (c.room) leaveRoom(c);
-    if (rooms.size >= MAX_ROOMS) return send(c, { t: 'err', m: '서버에 방이 너무 많습니다. 잠시 뒤 다시 시도해 주세요' });
+    if (rooms.size >= MAX_ROOMS) return send(c, { t: 'err', m: '서버에 파티가 너무 많습니다. 잠시 뒤 다시 시도해 주십시오' });
     if (!MAPS.includes(msg.map) || !MODES.includes(msg.mode)) return send(c, { t: 'err', m: '맵 또는 모드가 올바르지 않습니다' });
     if (msg.mode === 'team' && msg.map !== 'canyon') return send(c, { t: 'err', m: '팀전은 협곡에서만 할 수 있습니다' });
     const room = { code: makeCode(), map: msg.map, mode: msg.mode, priv: !!msg.priv, host: c.id, started: false, players: new Map(), tick: 0, seed: 0 };
@@ -133,10 +133,10 @@ function onMessage(c, msg) {
 
   if (t === 'join') {
     const room = rooms.get(String(msg.code || '').toUpperCase());
-    if (!room) return send(c, { t: 'err', m: '방을 찾을 수 없습니다' });
-    if (room.started) return send(c, { t: 'err', m: '이미 시작한 방입니다' });
-    if (room.players.size >= MAX_ROOM) return send(c, { t: 'err', m: `방이 가득 찼습니다 (최대 ${MAX_ROOM}명)` });
-    for (const o of room.players.values()) if (o.nick === c.nick) return send(c, { t: 'err', m: '같은 닉네임이 이미 방에 있습니다' });
+    if (!room) return send(c, { t: 'err', m: '파티를 찾을 수 없습니다' });
+    if (room.started) return send(c, { t: 'err', m: '이미 출격한 파티입니다' });
+    if (room.players.size >= MAX_ROOM) return send(c, { t: 'err', m: `파티가 가득 찼습니다 (최대 ${MAX_ROOM}명)` });
+    for (const o of room.players.values()) if (o.nick === c.nick) return send(c, { t: 'err', m: '같은 닉네임이 이미 파티에 있습니다' });
     if (c.room) leaveRoom(c);
     joinRoom(c, room, msg.team);
     return;
