@@ -286,6 +286,7 @@ body.dropping #dropHint{ display:flex; }
 .tbtns .a4{ right:25px; bottom:109px; }
 .tbtns .b1{ right:165px; bottom:65px; }
 .tbtns .b2{ right:65px; bottom:165px; }
+.tbtns .c1{ right:165px; bottom:12px; }
 .tb.sm{ width:40px; height:40px; font-size:10px; }
 .tlean{ position:absolute; left:calc(10px + env(safe-area-inset-left,0px)); top:calc(96px + env(safe-area-inset-top,0px)); display:flex; gap:8px; }
 .tswap{ position:absolute; right:calc(12px + env(safe-area-inset-right,0px)); top:calc(44px + env(safe-area-inset-top,0px)); }
@@ -400,6 +401,7 @@ body.is-raid .waveonly{ display:none; }
     <div class="tbtns">
       <button class="tb fire" data-t="fire">발사</button>
       <button class="tb a1" data-t="jump">점프</button>
+      <button class="tb sm c1" data-t="sprint">달리기</button>
       <button class="tb a2" data-t="reload">재장전</button>
       <button class="tb a4" data-t="aim">조준</button>
       <button class="tb sm b1 raidonly" data-t="use">줍기</button>
@@ -2082,7 +2084,7 @@ function resetGame() {
 
 // ---------- 입력 ----------
 const keys = {};
-let mouseDown = false, firePressed = false, touchMove = { x:0, y:0 };
+let mouseDown = false, firePressed = false, touchMove = { x:0, y:0 }, touchSprint = false, touchSprintRan = false;
 addEventListener('keydown', e => {
   if (e.code === 'KeyM') { toggleMute(); return; }
   if (e.code.startsWith('Arrow') || e.key === 'Alt') e.preventDefault();
@@ -2202,6 +2204,7 @@ if (isTouch) {
       if (b.closest('.tmore') && !['zoom', 'laser'].includes(t)) $('tmore').classList.remove('open');
       if (t === 'fire') { mouseDown = true; firePressed = true; }
       if (t === 'jump') jump();
+      if (t === 'sprint') { touchSprint = !touchSprint; touchSprintRan = false; b.classList.toggle('lit', touchSprint); }
       if (t === 'reload') startReload();
       if (t === 'swap') cycleWeapon(1);
       if (t === 'aim') { aiming = !aiming; b.classList.toggle('lit', aiming); }
@@ -3183,7 +3186,10 @@ function updatePlayer(dt) {
   P.yaw += clamp(ty, -1.5, 1.5) * 2.4 * dt; P.pitch = clamp(P.pitch + clamp(tp, -1, 1) * 1.6 * dt, -1.45, 1.45);
   ix += touchMove.x; iz += touchMove.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
-  const sprint = (keys.ShiftLeft || keys.ShiftRight) && iz < 0 && !aiming && !P.downed;
+  // 모바일 달리기 버튼: 켜 두면 앞으로 가는 동안 달리고, 멈추거나 조준하면 꺼짐
+  if (touchSprint && iz < -0.2) touchSprintRan = true;
+  if (touchSprint && ((touchSprintRan && iz > -0.2) || aiming || P.downed)) { touchSprint = false; touchSprintRan = false; document.querySelectorAll('.tb[data-t="sprint"]').forEach(b => b.classList.remove('lit')); }
+  const sprint = (keys.ShiftLeft || keys.ShiftRight || touchSprint) && iz < 0 && !aiming && !P.downed;
   P.sprinting = sprint;
   // 앉기: C 를 누르고 있는 동안만 앉음 (Ctrl+W 탭 닫기 사고를 막으려고 Ctrl 대신 C). 달리면 일어섬. 모바일은 버튼으로 켜고 끔
   if (!isTouch) { const want = !!keys.KeyC && !sprint; if (want !== crouch) setCrouch(want); }
@@ -4677,7 +4683,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.9';
+const GAME_VER = 'v1.2.10';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
