@@ -285,6 +285,7 @@ body.dropping #dropHint{ display:flex; }
 .tmore{ gap:6px; padding:6px; }
 body:not(.is-raid) .raidonly{ display:none; }
 body.is-raid .waveonly{ display:none; }
+.verTag{ position:fixed; right:10px; bottom:8px; font-size:12px; color:var(--dim); opacity:.75; font-family:monospace; pointer-events:none; z-index:6; }
 .modebar{ position:sticky; top:-24px; z-index:3; display:flex; gap:8px; margin:0 0 1em; padding:10px 0; background:rgb(14,17,22); }
 .modebar button{ flex:1; font:inherit; font-size:19px; font-weight:700; padding:12px 10px; border:2px solid rgba(241,233,216,.22); background:rgba(255,255,255,.04); color:var(--dim); cursor:pointer; text-align:center; }
 .modebar button[aria-pressed="true"]{ border-color:var(--amber); color:var(--amber); background:rgba(240,165,48,.12); }
@@ -302,6 +303,7 @@ body.is-raid .waveonly{ display:none; }
 .roomplayers{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
 .roomplayers span{ padding:3px 8px; background:rgba(0,0,0,.3); font-size:13px; }
 .roomplayers span.host{ color:var(--amber); }
+.roomplayers .verbad{ color:#ff7a6a; font-weight:700; }
 .roombox .err{ color:#ff7a6a; font-size:13px; margin:8px 0 0; }
 .nickrow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:-0.6em 0 1em; font-size:14px; color:var(--dim); }
 .nickrow b{ color:var(--ink); font-size:16px; }
@@ -414,6 +416,7 @@ body.is-raid .waveonly{ display:none; }
 
   <div id="dropHint"><div>저장 파일을 놓으면 진행 상황을 불러옵니다</div></div>
   <div class="overlay" id="startOv">
+    <div class="verTag" data-ver></div>
     <div class="card">
       <h1>잔해 구역</h1>
       <p class="lead">은신처에서 장비를 챙겨 출격하고, 적을 피하거나 쓰러뜨리며 상자를 뒤져 탈출 지점까지 살아 나오십시오. 죽으면 가지고 들어간 장비와 주운 물건을 잃습니다.</p>
@@ -470,6 +473,7 @@ body.is-raid .waveonly{ display:none; }
   </div>
 
   <div class="overlay side" id="hideOv" hidden>
+    <div class="verTag" data-ver></div>
     <div class="card">
       <button type="button" class="backbtn" id="hideBack" title="처음 화면으로"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12.5 3.5 6 10l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>처음 화면</span></button>
       <h1>은신처</h1>
@@ -4515,7 +4519,7 @@ function renderNick() {
   if (!STASH.nick || nickEdit) {
     const note = !STASH.nick ? '처음 정한 뒤 한 번은 바로 바꿀 수 있고, 그 뒤로는 30일에 한 번 바꿀 수 있습니다' : (STASH.nickFree || 0) > 0 ? '이번 변경은 대기 없이 가능 (다음부터 30일에 한 번)' : '바꾸면 30일 동안 다시 바꿀 수 없습니다';
     el.innerHTML = `<span>닉네임</span><input id="nickIn" maxlength="12" placeholder="2~12자" value="${STASH.nick || ''}"><button class="opt" id="nickOk">확인</button>${STASH.nick ? '<button class="opt" id="nickNo">취소</button>' : ''}<span class="hint">${note}</span>${nickErr ? `<span class="err">${nickErr}</span>` : ''}`;
-    const go = () => { nickErr = setNick($('nickIn').value); if (!nickErr) { nickEdit = false; if (NET.st === 'on') netSend({ t:'hello', nick:STASH.nick }); renderHideout(); } else renderNick(); };
+    const go = () => { nickErr = setNick($('nickIn').value); if (!nickErr) { nickEdit = false; if (NET.st === 'on') netSend({ t:'hello', nick:STASH.nick, ver:GAME_VER }); renderHideout(); } else renderNick(); };
     $('nickOk').onclick = go;
     $('nickIn').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') go(); };
     if ($('nickNo')) $('nickNo').onclick = () => { nickEdit = false; nickErr = ''; renderNick(); };
@@ -4527,6 +4531,9 @@ function renderNick() {
 }
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
+// 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
+const GAME_VER = '2026.10.30-1';
+document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = '버전 ' + GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
 const coopBonus = n => COOP_BONUS[Math.max(1, Math.min(MAX_ROOM, n | 0))];
@@ -4541,7 +4548,7 @@ function netConnect() {
   let ws;
   try { ws = new WebSocket(NET_URL); } catch (_) { NET.st = 'off'; NET.err = '서버에 연결할 수 없습니다'; renderRoom(); return; }
   NET.ws = ws;
-  ws.onopen = () => { NET.retry = 0; netSend({ t:'hello', nick:STASH.nick }); };
+  ws.onopen = () => { NET.retry = 0; netSend({ t:'hello', nick:STASH.nick, ver:GAME_VER }); };
   ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (_) { return; } if (m && typeof m.t === 'string') netOn(m); };
   ws.onclose = () => {
     if (NET.ws !== ws) return;
@@ -4862,7 +4869,8 @@ function renderRoom() {
   } else if (NET.room) {
     const r = NET.room, host = r.host === NET.id;
     h += `<div class="roominfo">${r.priv ? '비밀방' : '공개방'} 코드 <span class="code">${escH(r.code)}</span> · ${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)} · ${r.players.length}/${MAX_ROOM}명</div>`
-      + `<div class="roomplayers">${r.players.map(p => `<span class="${p.id === r.host ? 'host' : ''}">${escH(p.nick)}${p.id === r.host ? ' (방장)' : ''}${p.id === NET.id ? ' (나)' : ''}</span>`).join('')}</div>`
+      + `<div class="roomplayers">${r.players.map(p => `<span class="${p.id === r.host ? 'host' : ''}">${escH(p.nick)}${p.id === r.host ? ' (방장)' : ''}${p.id === NET.id ? ' (나)' : ''}${p.ver !== GAME_VER ? ` <b class="verbad">버전 ${escH(p.ver || '알 수 없음')}</b>` : ''}</span>`).join('')}</div>`
+      + (r.players.some(p => p.ver !== GAME_VER) ? `<p class="err">버전이 다른 사람이 있습니다 (내 버전 ${GAME_VER}). 버전이 다르면 서로 맞지 않을 수 있으니, 새로고침(Ctrl + F5)한 뒤 다시 들어와 주십시오.</p>` : '')
       + `<div class="opts"><button class="opt" id="roomLeave">방 나가기</button><span class="hint">${r.started ? '방원이 아직 출격 중입니다. 모두 돌아오면 다시 출격할 수 있습니다' : host ? '아래 출격 버튼을 누르면 방 전체가 함께 출격합니다' : '방장이 출격을 시작하면 함께 출격합니다'}</span></div>`;
   } else {
     h += `<div class="opts"><button class="opt" id="roomMake">방 만들기 (${MAPS[raidMap].name})</button><button class="opt" id="roomMakePriv">비밀방 만들기</button><button class="opt" id="roomRefresh">새로고침</button></div>`

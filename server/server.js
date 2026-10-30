@@ -65,7 +65,7 @@ function broadcast(room, obj, except) {
 function roomInfo(room) {
   return {
     code: room.code, map: room.map, mode: room.mode, priv: room.priv, host: room.host, started: room.started,
-    players: [...room.players.values()].map(c => ({ id: c.id, nick: c.nick, team: c.team, ready: c.ready })),
+    players: [...room.players.values()].map(c => ({ id: c.id, nick: c.nick, team: c.team, ready: c.ready, ver: c.ver || '' })),
   };
 }
 function sendRoom(room) { broadcast(room, { t: 'room', room: roomInfo(room) }); }
@@ -106,6 +106,8 @@ function onMessage(c, msg) {
     const nick = typeof msg.nick === 'string' ? msg.nick.trim() : '';
     if (!NICK_RE.test(nick)) return send(c, { t: 'err', m: '닉네임은 2~12자의 한글, 영문, 숫자, _ 만 쓸 수 있습니다' });
     c.nick = nick;
+    c.ver = typeof msg.ver === 'string' ? msg.ver.slice(0, 20) : '';
+    if (c.room) sendRoom(c.room);
     return send(c, { t: 'welcome', id: c.id });
   }
   if (!c.nick) return send(c, { t: 'err', m: '먼저 닉네임을 보내야 합니다' });
