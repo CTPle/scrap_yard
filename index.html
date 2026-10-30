@@ -229,6 +229,7 @@ body.dropping #dropHint{ display:flex; }
 #hPack .igrid{ grid-template-columns:repeat(auto-fill, 58px); grid-auto-rows:58px; }
 #deployMsg{ color:#ff8a6a; }
 @media (max-width: 600px){ .packgrid{ grid-template-columns:1fr; } }
+#hitEdge{ position:absolute; inset:0; pointer-events:none; opacity:0; box-shadow:inset 0 0 0 5px rgba(255,40,28,.95), inset 0 0 90px 24px rgba(255,30,20,.55); }
 #vignette{ position:absolute; inset:0; pointer-events:none; opacity:0; background:radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(190,30,20,.65) 100%); }
 .overlay{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:var(--veil); padding:24px; overflow-y:auto; z-index:5; }
 .overlay[hidden]{ display:none; }
@@ -379,6 +380,7 @@ body.is-raid .waveonly{ display:none; }
     </div>
   </div>
   <div id="vignette"></div>
+  <div id="hitEdge"></div>
 
   <div id="touch">
     <div id="tMove"></div>
@@ -2014,6 +2016,8 @@ const flashLight = new THREE.PointLight('#ffc070', 0, 9, 2); scene.add(flashLigh
 // 전술 라이트: 시점에 붙은 조명. 꺼져 있을 때는 밝기만 0 으로 둠
 const torch = new THREE.SpotLight('#fff1d6', 0, 70, 0.42, 0.55, 1.2);
 torch.position.set(0.2, -0.15, 0); torch.target.position.set(0, 0, -10); camera.add(torch); camera.add(torch.target);
+// 다른 플레이어의 총기 라이트 (가장 가까운 한 명 것만 실제 빛으로 비춤. 조명 개수를 처음부터 고정해 두어야 화면이 멈칫하지 않음)
+const mateTorch = new THREE.SpotLight('#fff1d6', 0, 50, 0.42, 0.55, 1.2); scene.add(mateTorch); scene.add(mateTorch.target);
 const VM_BASE = new THREE.Vector3(0.26, -0.27, -0.45);
 
 // ---------- 게임 상태 ----------
@@ -2033,6 +2037,7 @@ const EYE = new THREE.Vector3();
 let chargeT = 0, railRelease = false, zoomCur = 1, recoilPitch = 0, recoilYaw = 0, shotAgo = 9;
 let mode = 'wave';
 let loadout = [0, 2], slot = 1, aiming = false, aimT = 0, mainChoice = 2;
+let hitEdgeT = 0;
 let ammo, weapon, lastWeapon, fireCd, reloading, switchT, recoil, kick, dmgFlash, score, kills, wave, waveState, waveT, queue, spawnT;
 let enemies = [], shots = [], pickups = [], parts = [], tracers = [], nades = [], frags = [], rings = [], shakeAmt = 0, fragCd = 0;
 let msgT = 0;
@@ -3079,13 +3084,13 @@ function hurtPlayer(d) {
   if (state !== 'play' && state !== 'inv') return;
   d *= P.defMul || 1;
   if (P.downed) {
-    P.downHp -= d; dmgFlash = Math.min(1, dmgFlash + 0.5); SND.play('hurt');
+    P.downHp -= d; dmgFlash = Math.min(1, dmgFlash + 0.5); hitEdgeT = 1; SND.play('hurt');
     if (P.downHp <= 0) downDeath('쓰러진 상태에서 사망했습니다');
     return;
   }
   const absorb = Math.min(P.ar, d * (P.arAbs || 0.5));
   P.ar -= absorb; P.hp -= d - absorb; P.calm = 0;
-  dmgFlash = Math.min(1, dmgFlash + 0.5 + d / 40);
+  dmgFlash = Math.min(1, dmgFlash + 0.5 + d / 40); hitEdgeT = 1; // 맞을 때마다 화면 테두리가 빨갛게 번쩍임
   SND.play('hurt');
   if (P.hp <= 0) { P.hp = 0; if (mode === 'raid' && raid && raid.coop) goDown(); else gameOver(); }
 }
@@ -3281,6 +3286,7 @@ function updateFx(dt) {
   tracers = tracers.filter(t => { if (t.t <= 0) { scene.remove(t.m); t.m.geometry.dispose(); t.m.material.dispose(); } return t.t > 0; });
   if (hitT > 0) { hitT -= dt; if (hitT <= 0) $('hitmark').style.opacity = 0; }
   dmgFlash = Math.max(0, dmgFlash - dt * 1.6);
+  hitEdgeT = Math.max(0, hitEdgeT - dt * 2.2); $('hitEdge').style.opacity = hitEdgeT;
   $('vignette').style.opacity = Math.max(dmgFlash, P.hp < 30 ? 0.35 + Math.sin(performance.now() / 250) * 0.1 : 0);
 }
 
@@ -3669,7 +3675,8 @@ function interact() {
     raid.keys[0]--;
     const left = raid.keys[0];
     if (left <= 0) { raid.bag.splice(i, 1); raid.keys.shift(); }
-    setVaultState(gate, true); SND.play('clear'); say(left > 0 ? `보안 문이 열렸습니다 (카드키 남은 사용 ${left}회)` : '보안 문이 열렸습니다 (카드키를 다 썼습니다)');
+    setVaultState(gate, true); if (NET.inRaid) netSend({ t:'e', k:'door', d:VAULTS.indexOf(gate) });
+    SND.play('clear'); say(left > 0 ? `보안 문이 열렸습니다 (카드키 남은 사용 ${left}회)` : '보안 문이 열렸습니다 (카드키를 다 썼습니다)');
     return;
   }
   const b = nearBox();
@@ -3691,7 +3698,12 @@ function closeInv() {
   if (state !== 'inv') return;
   invSel = null;
   $('invOv').hidden = true;
-  if (invBox) invBox.strip.material = invBox.items.length ? glow('#f0a530') : glow('#3a3f44');
+  if (invBox) {
+    invBox.strip.material = invBox.items.length ? glow('#f0a530') : glow('#3a3f44');
+    if (invBox.pdrop) netDropSync(invBox);
+    // 떨어뜨린 물건이 든 작은 상자는 비면 사라짐
+    if (invBox.type === 'drop' && !invBox.items.length) removeBox(invBox);
+  }
   invBox = null;
   state = 'play';
   if (lockMode && !isTouch) requestLock();
@@ -3710,6 +3722,34 @@ function takeItem(box, idx) {
     raid.bag.push(id);
   }
   box.items.splice(idx, 1); SND.play('pickup');
+  if (box.pdrop) netDropSync(box);
+}
+// ---------- 버린 물건 상자 (같은 판의 모든 플레이어가 봄) ----------
+let pdropSeq = 0;
+function markPDrop(box) { box.pdrop = true; box.dropId = `${NET.id || 0}-${++pdropSeq}`; box.feet = Math.max(0, P.pos.y - 1.7); }
+function removeBox(box) {
+  scene.remove(box.g);
+  const i = lootBoxes.indexOf(box); if (i >= 0) lootBoxes.splice(i, 1);
+}
+function netDropSync(box) {
+  if (!NET.inRaid || !box.pdrop) return;
+  const g = box.g.position;
+  netSend({ t:'e', k:'loot', d:{ i:box.dropId, x:r2(g.x), z:r2(g.z), f:r2(box.feet || 0), it:box.items.slice(0, 40), k:(box.keyUses || []).slice(0, 10), g:(box.gunObjs || []).slice(0, 10) } });
+}
+function netDropRecv(d) {
+  if (!raid || !d || typeof d !== 'object' || typeof d.i !== 'string' || !Array.isArray(d.it)) return;
+  const items = d.it.filter(id => typeof id === 'string' && ITEMS[id]).slice(0, 40);
+  let box = lootBoxes.find(b => b.pdrop && b.dropId === d.i);
+  if (!box) {
+    if (!items.length) return;
+    box = addLootBox(+d.x || 0, +d.z || 0, 'drop', +d.f || 0, true, []); box.pdrop = true; box.dropId = d.i; box.feet = +d.f || 0; box.opened = true;
+  }
+  box.items = items;
+  box.keyUses = Array.isArray(d.k) ? d.k.filter(v => typeof v === 'number').slice(0, 10) : [];
+  // 받은 총기는 내 창고 번호와 겹치지 않게 새 번호를 붙임
+  box.gunObjs = Array.isArray(d.g) ? d.g.filter(o => o && typeof o === 'object' && ITEMS[o.id]).map(o => ({ uid:STASH.nextUid++, id:o.id, up:Object.assign({ dmg:0, rec:0, rel:0, mag:0 }, o.up || {}) })) : [];
+  if (!items.length) { if (invBox === box) closeInv(); else removeBox(box); }
+  else if (invBox === box) renderInv();
 }
 function dropItem(idx) {
   const ko = keyOrd(idx), go = gunOrd(idx);
@@ -3719,16 +3759,18 @@ function dropItem(idx) {
   let box = invBox;
   if (!box) {
     box = lootBoxes.find(b => b.type === 'drop' && Math.hypot(b.g.position.x - P.pos.x, b.g.position.z - P.pos.z) < 1.5);
-    if (!box) box = addLootBox(P.pos.x + Math.sin(P.yaw) * -0.8, P.pos.z + Math.cos(P.yaw) * -0.8, 'drop', P.pos.y - 1.7, true, []);
+    if (!box) { box = addLootBox(P.pos.x + Math.sin(P.yaw) * -0.8, P.pos.z + Math.cos(P.yaw) * -0.8, 'drop', P.pos.y - 1.7, true, []); markPDrop(box); }
     box.opened = true;
   }
   box.items.push(id); if (kUse !== null) (box.keyUses = box.keyUses || []).push(kUse);
   if (gObj !== undefined && gObj) (box.gunObjs = box.gunObjs || []).push(gObj);
+  if (box.pdrop) netDropSync(box);
   SND.play('empty');
 }
 function bagPushOrDrop(id) {
   if (bagUsed() + ITEMS[id].size <= raid.cap) { raid.bag.push(id); return true; }
   const box = addLootBox(P.pos.x + Math.sin(P.yaw) * -0.8, P.pos.z + Math.cos(P.yaw) * -0.8, 'drop', P.pos.y - 1.7, true, [id]);
+  markPDrop(box); netDropSync(box);
   box.opened = true; say(`${ITEMS[id].name}을(를) 넣을 공간이 없어 발밑에 내려놓았습니다`, 1);
   return false;
 }
@@ -4407,9 +4449,9 @@ function updateRaid(dt) {
   if ($('prompt').innerHTML !== pr) $('prompt').innerHTML = pr;
   updateDown(dt);
   if (state !== 'play') return;
-  // 탈출 (쓰러진 상태로는 탈출할 수 없음)
+  // 탈출 (쓰러진 상태에서도 기어서 탈출 지점에 들어가면 탈출 가능)
   let inExt = null;
-  for (const ex of raid.exts) if (!P.downed && Math.hypot(ex.x - P.pos.x, ex.z - P.pos.z) < 2.5 && Math.abs(P.pos.y - 1.7 - (ex.y || 0)) < 1) inExt = ex;
+  for (const ex of raid.exts) if (Math.hypot(ex.x - P.pos.x, ex.z - P.pos.z) < 2.5 && Math.abs(P.pos.y - 1.7 - (ex.y || 0)) < 1) inExt = ex;
   if (inExt) {
     raid.extT += dt; $('extBar').style.display = 'block'; $('extFill').style.width = Math.min(100, raid.extT / 5 * 100) + '%';
     $('extTxt').textContent = `${inExt.name}에서 탈출 중 ${Math.max(0, 5 - raid.extT).toFixed(1)}초`;
@@ -4545,7 +4587,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.1.0';
+const GAME_VER = 'v1.1.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4629,7 +4671,11 @@ function makeMate(id) {
   const head = part(body, BOX, M2.skin, [0.3, 0.3, 0.3], [0, 1.66, 0]); head.userData.head = true;
   part(body, BOX, M2.dark, [0.08, 0.08, 0.55], [0.22, 1.2, -0.3]); // 총
   const tag = party ? nameTag(nickOf(id)) : new THREE.Object3D(); tag.position.set(0, 2.25, 0); g.add(tag);
-  const mt = { id, g, body, tag, party, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
+  // 레이저와 라이트 빛줄기 (켠 사람 말고 다른 사람에게도 보이게)
+  const lz = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), laserMat); lz.frustumCulled = false; lz.visible = false; scene.add(lz);
+  const ld = new THREE.Mesh(laserDot.geometry, laserDot.material); ld.visible = false; scene.add(ld);
+  const beam = new THREE.Mesh(beamGeo, beamMat); beam.visible = false; beam.frustumCulled = false; scene.add(beam);
+  const mt = { id, g, body, tag, party, lz, ld, beam, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
   g.userData.mate = mt; g.visible = false;
   scene.add(g); MATES.set(id, mt);
   return mt;
@@ -4641,7 +4687,31 @@ function mateState(a) {
   mt.tx = +a[1]; mt.ty = +a[2] - 1.7; mt.tz = +a[3]; mt.yaw = +a[4]; mt.pitch = +a[5]; mt.flags = a[6] | 0; mt.down = !!(mt.flags & 2);
   if (!mt.seen) { mt.seen = true; mt.g.position.set(mt.tx, mt.ty, mt.tz); mt.g.visible = true; }
 }
-function dropMate(id) { const mt = MATES.get(id); if (!mt) return; scene.remove(mt.g); MATES.delete(id); }
+function dropMate(id) { const mt = MATES.get(id); if (!mt) return; scene.remove(mt.g); scene.remove(mt.lz); scene.remove(mt.ld); scene.remove(mt.beam); MATES.delete(id); if (!MATES.size) mateTorch.intensity = 0; }
+// 라이트 빛줄기: 꼭짓점이 총구에 오고 +Y 쪽으로 퍼지는 원뿔 (길이 1, 끝 반지름 0.42)
+const beamGeo = new THREE.ConeGeometry(0.42, 1, 18, 1, true); beamGeo.translate(0, -0.5, 0); beamGeo.rotateX(Math.PI);
+const beamMat = new THREE.MeshBasicMaterial({ color:'#fff1d6', transparent:true, opacity:0.07, depthWrite:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending });
+const _mo = new THREE.Vector3(), _md = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), mateRay = new THREE.Raycaster();
+function updateMateGear(mt) {
+  const lzOn = !!(mt.flags & 4) && !mt.down, ltOn = !!(mt.flags & 8) && !mt.down;
+  mt.lz.visible = mt.ld.visible = lzOn; mt.beam.visible = ltOn;
+  if (!lzOn && !ltOn) return null;
+  const g = mt.g.position;
+  _md.set(-Math.sin(mt.yaw) * Math.cos(mt.pitch), Math.sin(mt.pitch), -Math.cos(mt.yaw) * Math.cos(mt.pitch));
+  _mo.set(g.x, g.y + (mt.flags & 1 ? 0.95 : 1.35), g.z).addScaledVector(_md, 0.55);
+  mateRay.set(_mo, _md); mateRay.far = 120;
+  const hit = mateRay.intersectObjects(worldMeshes, false)[0], dist = hit ? hit.distance : 120;
+  if (lzOn) {
+    const end = _mo.clone().addScaledVector(_md, dist - 0.03), pa = mt.lz.geometry.attributes.position;
+    pa.setXYZ(0, _mo.x, _mo.y, _mo.z); pa.setXYZ(1, end.x, end.y, end.z); pa.needsUpdate = true;
+    mt.ld.position.copy(end); mt.ld.scale.setScalar(Math.max(0.025, camera.position.distanceTo(end) * 0.0035));
+  }
+  if (ltOn) {
+    const L = Math.min(dist, 16);
+    mt.beam.position.copy(_mo); mt.beam.quaternion.setFromUnitVectors(_up, _md); mt.beam.scale.set(L, L, L);
+  }
+  return ltOn ? camera.position.distanceTo(_mo) : null;
+}
 function clearMates() { for (const id of [...MATES.keys()]) dropMate(id); }
 function mateMeshes() { const a = []; for (const mt of MATES.values()) if (mt.g.visible) a.push(mt.g); return a; }
 function hitMate(mt, dmg, head, exact) {
@@ -4809,7 +4879,7 @@ function updateNet(dt) {
   netSendT -= dt;
   if (netSendT <= 0) {
     netSendT = 1 / 15;
-    const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0);
+    const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0) | (laserActive() && !(WEAPONS[weapon].scope && aimT > 0.85) ? 4 : 0) | (lightActive() ? 8 : 0);
     netSend({ t:'s', p:[+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.yaw.toFixed(2), +P.pitch.toFixed(2), f, weapon, Math.round(P.hp)] });
   }
   // 적에게 준 피해를 모아서 AI 담당자에게 (1초에 최대 20번)
@@ -4818,6 +4888,7 @@ function updateNet(dt) {
   if (netIsAI()) sendAI(dt);
   // 팀원 모형 움직이기
   const k = 1 - Math.exp(-14 * dt);
+  let torchBest = Infinity, torchMt = null;
   for (const mt of MATES.values()) {
     if (!mt.g.visible) continue;
     const g = mt.g;
@@ -4829,7 +4900,15 @@ function updateNet(dt) {
     mt.body.position.y += ((mt.down ? 0.2 : 0) - mt.body.position.y) * k;
     mt.body.scale.y += (sq - mt.body.scale.y) * k;
     mt.tag.position.y = mt.down ? 0.9 : 2.25 * sq;
+    const ld2 = updateMateGear(mt);
+    if (ld2 !== null && ld2 < torchBest) { torchBest = ld2; torchMt = mt; }
   }
+  // 라이트를 켠 다른 플레이어 중 가장 가까운 한 명의 라이트만 실제로 주변을 비춤
+  if (torchMt && torchBest < 60) {
+    mateTorch.position.copy(_mo.set(torchMt.g.position.x, torchMt.g.position.y + (torchMt.flags & 1 ? 0.95 : 1.35), torchMt.g.position.z));
+    _md.set(-Math.sin(torchMt.yaw) * Math.cos(torchMt.pitch), Math.sin(torchMt.pitch), -Math.cos(torchMt.yaw) * Math.cos(torchMt.pitch));
+    mateTorch.target.position.copy(_mo).addScaledVector(_md, 10); mateTorch.target.updateMatrixWorld(); mateTorch.intensity = 1.5;
+  } else mateTorch.intensity = 0;
   // 쓰러진 팀원 살리기: 옆에서 F 를 계속 누르고 있기
   const dm = !P.downed && keys.KeyF ? nearDownedMate() : null;
   if (dm && dm === reviveWho) {
@@ -4857,6 +4936,8 @@ function netEvent(m) {
   else if (m.k === 'up') { if (mt) mt.down = false; }
   else if (m.k === 'dead') { dropMate(from); if (isParty(from)) say(`${nickOf(from)}이(가) 사망했습니다`, 1); }
   else if (m.k === 'extract') { dropMate(from); if (isParty(from)) say(`${nickOf(from)}이(가) 탈출했습니다`, 1); }
+  else if (m.k === 'door') { const v = VAULTS[m.d | 0]; if (v && !v.open) { setVaultState(v, true); SND.play('clear', 0.4); } }
+  else if (m.k === 'loot') netDropRecv(m.d);
   else if (m.k === 'shot' && mt && mt.g.visible) {
     // 팀원 사격: 총구 쪽에서 바라보는 방향으로 짧은 궤적
     const o = mt.g.position.clone(); o.y += mt.flags & 1 ? 1.0 : 1.4;
