@@ -4590,6 +4590,7 @@ function nameTag(text) {
   g.fillStyle = '#9fd4ff'; g.fillText(text, 128, 32);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:new THREE.CanvasTexture(c), depthTest:false, transparent:true }));
   sp.scale.set(1.6, 0.4, 1); sp.renderOrder = 10;
+  sp.raycast = () => {}; // 이름표는 총알 판정에서 제외 (그대로 두면 사격 계산이 오류로 멈춤)
   return sp;
 }
 function makeMate(id) {
