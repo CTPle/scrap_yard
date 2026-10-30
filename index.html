@@ -451,7 +451,7 @@ body.is-raid .waveonly{ display:none; }
           <dt>방향키</dt><dd>시점 회전 (마우스 대신 사용 가능)</dd>
           <dt>Space</dt><dd>점프 (낮은 장애물 위로 올라갈 수 있음)</dd>
           <dt>R</dt><dd>재장전</dd>
-          <dt>왼쪽 Ctrl</dt><dd>앉기, 일어서기 (낮은 엄폐물 뒤에 숨고 덜 발견됨. 이동은 느려지며 달리거나 점프하면 일어섬)</dd>
+          <dt>C (누르는 동안)</dt><dd>앉기 (낮은 엄폐물 뒤에 숨고 덜 발견됨. 이동은 느려지며 달리거나 점프하면 일어섬)</dd>
           <dt>Q / E</dt><dd>누르고 있는 동안 왼쪽, 오른쪽으로 몸 기울이기 (엄폐 사격)</dd>
           <dt>F / Tab / H</dt><dd>상자 열기, 문 열기 / 가방 보기 / 치료 키트 사용</dd>
           <dt>G</dt><dd>수류탄 던지기, 2초 뒤 폭발</dd>
@@ -2098,7 +2098,6 @@ addEventListener('keydown', e => {
   if (e.code === 'Digit4' && mode === 'raid') useMed();
   if (e.code === 'KeyT') toggleLaser();
   if (e.code === 'KeyO') showExits();
-  if (e.code === 'ControlLeft' && !e.repeat) setCrouch(!crouch);
   if (e.code === 'KeyF' && mode === 'raid') interact();
   if (e.code === 'KeyH' && mode === 'raid') useMed();
   if (e.code === 'KeyG' && mode === 'raid') throwFrag();
@@ -3186,7 +3185,9 @@ function updatePlayer(dt) {
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
   const sprint = (keys.ShiftLeft || keys.ShiftRight) && iz < 0 && !aiming && !P.downed;
   P.sprinting = sprint;
-  if (sprint && crouch) setCrouch(false);
+  // 앉기: C 를 누르고 있는 동안만 앉음 (Ctrl+W 탭 닫기 사고를 막으려고 Ctrl 대신 C). 달리면 일어섬. 모바일은 버튼으로 켜고 끔
+  if (!isTouch) { const want = !!keys.KeyC && !sprint; if (want !== crouch) setCrouch(want); }
+  else if (sprint && crouch) setCrouch(false);
   crouchT += ((crouch ? 1 : 0) - crouchT) * Math.min(1, dt * 10);
   const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (P.downed ? 0.35 : 1); // 쓰러지면 기어감
   const s = Math.sin(P.yaw), c = Math.cos(P.yaw);
@@ -4676,7 +4677,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.8';
+const GAME_VER = 'v1.2.9';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
