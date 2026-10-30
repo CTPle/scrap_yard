@@ -1937,6 +1937,13 @@ const models = [];
   part(rg, BOX, gunDark, [0.05, 0.06, 0.2], [0, 0.11, -0.15]);
   const orb = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color:'#9ff6ff', transparent:true, opacity:0.85, depthWrite:false }));
   orb.position.set(0, 0.03, -0.96); orb.scale.setScalar(0.001); rg.add(orb); rg.userData.orb = orb;
+  // 총 왼쪽 옆면 충전 게이지: 검은 틀 안에 칸 8개. 뒤쪽 칸부터 앞쪽으로 차오름
+  part(rg, BOX, gunDark, [0.01, 0.052, 0.37], [-0.054, -0.005, -0.2]);
+  rg.userData.cells = [];
+  for (let i = 0; i < 8; i++) {
+    const c = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color:'#123038' }));
+    c.scale.set(0.006, 0.034, 0.03); c.position.set(-0.06, -0.005, -0.04 - i * 0.043); rg.add(c); rg.userData.cells.push(c);
+  }
   models.push(rg);
   const sn = new THREE.Group();
   part(sn, BOX, gunDark, [0.08, 0.11, 0.55], [0, 0.0, -0.22]);
@@ -1960,13 +1967,13 @@ const models = [];
 // 무기별 조준경 장착 위치 [높이, 앞뒤], 레이저 위치 [좌우, 높이, 앞뒤]
 // 가늠자(가늠쇠) 위치 [조준선 높이, 뒤 가늠자 앞뒤, 앞 가늠쇠 앞뒤, 뒤 받침 높이, 앞 받침 높이]
 const IRON = [
-  [0.122, -0.05, -0.32, 0.105, 0.105],
+  [0.122, -0.05, -0.29, 0.105, 0.105],   // 권총: 원래 총 모형의 앞 가늠쇠 날 바로 뒤에 형광 점이 오도록 (예전엔 날에 가려 안 보였음)
   [0.088, -0.08, -0.9, 0.07, 0.065],
   [0.168, -0.15, -0.66, 0.15, 0.06],
   [0.185, -0.2, -0.58, 0.16, 0.105],
-  [0.165, -0.12, -0.92, 0.14, 0.055],
+  [0.165, -0.12, -0.75, 0.14, 0.045],   // 레일건: 앞 가늠쇠를 두 레일 사이 빈 공간이 아니라 맨 앞 코일 다리 위로
   [0.1, -0.1, -0.95, 0.055, 0.05],
-  [0.14, -0.08, -0.78, 0.12, 0.075]
+  [0.14, -0.08, -0.78, 0.075, 0.075]   // 반자동 산탄총: 뒤 가늠자 받침을 실제 총 윗면 높이로
 ];
 function buildIron(i) {
   const [y, zr, zf, br, bf] = IRON[i], g = new THREE.Group(), dark = std('#141518', { metalness:0.6 });
@@ -1976,6 +1983,7 @@ function buildIron(i) {
   part(g, BOX, dark, [0.01, h, 0.02], [-0.012, br + h / 2, zr]); part(g, BOX, dark, [0.01, h, 0.02], [0.012, br + h / 2, zr]);
   // 앞 가늠쇠: 가는 기둥과 끝의 빛나는 점 (이 점이 탄착점)
   const hf = y - bf;
+  part(g, BOX, dark, [0.026, 0.012, 0.03], [0, bf + 0.006, zf]); // 앞 가늠쇠 받침 (총에 붙어 있는 느낌)
   part(g, BOX, dark, [0.009, hf, 0.01], [0, bf + hf / 2, zf]);
   // 형광 표시: 앞 가늠쇠는 크고 밝은 형광 녹색 점(조준점), 그 뒤에 검은 테두리를 깔아 밝은 배경에서도 잘 보이게 함.
   // 뒤 가늠자 두 기둥 위에는 작은 형광 주황 점을 달아 세 점을 한 줄로 맞추면 조준이 맞음
@@ -2272,6 +2280,22 @@ function updateLaser() {
   const pos = laserGeo.attributes.position;
   pos.setXYZ(0, from.x, from.y, from.z); pos.setXYZ(1, end.x, end.y, end.z); pos.needsUpdate = true;
   laserDot.position.copy(end); laserDot.scale.setScalar(Math.max(0.025, camera.position.distanceTo(end) * 0.0035));
+}
+// 레일건 옆면 게이지 칸 색: 충전 중이면 하늘색으로 차오르고(가득 차면 하얗게 깜빡임),
+// 쏜 뒤 재충전 중이면 주황색으로 차오르며, 쏠 준비가 되면 칸 전체가 은은한 청록색
+const RC = { off:new THREE.Color('#10262c'), ready:new THREE.Color('#2a8f9c'), lit:new THREE.Color('#9ff6ff'), full:new THREE.Color('#f2ffff'), cool:new THREE.Color('#ff9a3c') };
+function railCells(k, cool, t) {
+  const cells = models[weapon] && models[weapon].userData.cells; if (!cells) return;
+  const n = cells.length;
+  cells.forEach((c, i) => {
+    const col = c.material.color;
+    if (k > 0) {
+      const f = Math.max(0, Math.min(1, k * n - i));
+      if (k >= 0.999 || (k > 0.85 && f >= 1)) col.copy(RC.lit).lerp(RC.full, 0.5 + Math.sin(t * 40) * 0.5);
+      else col.copy(RC.off).lerp(RC.lit, f);
+    } else if (cool > 0) col.copy(RC.off).lerp(RC.cool, Math.max(0, Math.min(1, (1 - cool) * n - i)) * 0.8);
+    else col.copy(RC.ready);
+  });
 }
 function startReload() {
   if (P.downed) return;
@@ -3245,16 +3269,16 @@ function updateWeapon(dt) {
       railCoilMat.color.copy(RAIL_IDLE).lerp(RAIL_FULL, k);
       orb.scale.setScalar(0.01 + k * 0.05 + Math.sin(chargeT * 60) * 0.004 * k);
       vm.position.x += rand(-1, 1) * 0.005 * k; vm.position.y += rand(-1, 1) * 0.005 * k;
-      $('charge').style.opacity = 1; $('chargeFill').style.width = (k * 100) + '%';
+      railCells(k, 0, chargeT);
       if (k >= 1) { chargeT = 0; railRelease = true; fireCd = 0; fire(); railRelease = false; }
     }
     if (chargeT <= 0) {
       const cool = fireCd > 0 ? fireCd / w.rate : 0;
       railCoilMat.color.copy(RAIL_IDLE).lerp(RAIL_READY, 1 - cool);
       orb.scale.setScalar(0.001);
-      $('charge').style.opacity = 0;
+      railCells(0, cool, 0);
     }
-  } else $('charge').style.opacity = 0;
+  }
   if (flashT > 0) { flashT -= dt; if (flashT <= 0) flash.visible = false; }
   flashLight.intensity = Math.max(0, flashLight.intensity - dt * 40);
 }
@@ -4651,7 +4675,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.5';
+const GAME_VER = 'v1.2.6';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
