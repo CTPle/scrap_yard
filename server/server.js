@@ -204,9 +204,10 @@ function onMessage(c, msg) {
       return broadcast(room, { t: 'e', k: 'revive', from: c.id, to: target.id });
     }
     if (k === 'down') c.down = true;
-    if (k === 'dead' || k === 'extract') c.down = false;
+    if (k === 'up') c.down = false;
+    if (k === 'dead' || k === 'extract') { c.down = false; c.inRaid = false; c.state = null; }
     // 그 밖의 사건(사격, 쓰러짐, 사망, 탈출, 아이템 줍기, 폭발 등)은 다른 사람에게 그대로 전달
-    const ALLOWED = ['shot', 'down', 'dead', 'extract', 'loot', 'boom', 'door', 'say'];
+    const ALLOWED = ['shot', 'down', 'up', 'dead', 'extract', 'loot', 'boom', 'door', 'say'];
     if (!ALLOWED.includes(k)) return;
     const out = { t: 'e', k, from: c.id };
     if (msg.d !== undefined) out.d = msg.d;

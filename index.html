@@ -2292,7 +2292,8 @@ function fire() {
   camera.updateMatrixWorld();
   camera.getWorldDirection(fwd);
   flashLight.position.copy(P.pos).addScaledVector(fwd, 0.8); flashLight.intensity = 2.2;
-  const targets = worldMeshes.concat(enemies.map(e => e.g));
+  if (NET.inRaid) netSend({ t:'e', k:'shot', d:[weapon] });
+  const targets = worldMeshes.concat(enemies.map(e => e.g), mateMeshes());
   let hitAny = false, killedAny = false, headAny = false, visorAny = false, coreAny = false, shieldAny = false;
   const right = tmpV2.set(1, 0, 0).applyQuaternion(camera.quaternion);
   const muzzle = EYE.clone().addScaledVector(fwd, 0.7).addScaledVector(right, 0.22).add(new THREE.Vector3(0, -0.18, 0));
@@ -2309,7 +2310,8 @@ function fire() {
     let end = P.pos.clone().addScaledVector(fwd, 320);
     const done = new Set();
     for (const h of ray.intersectObjects(targets, true)) {
-      let o = h.object; while (o && !o.userData.enemy) o = o.parent;
+      let o = h.object; while (o && !o.userData.enemy && !o.userData.mate) o = o.parent;
+      if (o && o.userData.mate) { const mt = o.userData.mate; if (!done.has(mt)) { done.add(mt); hitAny = true; burst(h.point, '#c23a2a', 6, 4); hitMate(mt, w.dmg * (h.object.userData.head ? 2 : 1), h.object.userData.head); } continue; }
       if (o && o.userData.enemy) {
         const e = o.userData.enemy;
         if (e.dead || done.has(e)) continue;
@@ -2340,7 +2342,8 @@ function fire() {
     const end = h ? h.point : P.pos.clone().addScaledVector(dir, 320);
     addTracer(muzzle, end);
     if (!h) continue;
-    let o = h.object; while (o && !o.userData.enemy) o = o.parent;
+    let o = h.object; while (o && !o.userData.enemy && !o.userData.mate) o = o.parent;
+    if (o && o.userData.mate) { hitAny = true; burst(h.point, '#c23a2a', 4, 3); hitMate(o.userData.mate, w.dmg * (h.object.userData.head ? 2 : 1), h.object.userData.head); continue; }
     if (o && o.userData.enemy) {
       const e = o.userData.enemy;
       if (e.dead) continue;
@@ -2374,7 +2377,7 @@ function blastReach(p, body, headUp) {
 }
 // 자기 폭발 피해: 적과 같은 반경, 같은 거리 감소(가장자리에서 40%)로, 적이 받는 피해의 35%
 const SELF_BLAST = 0.35;
-function explode(p, dmgIn, Rin) {
+function explode(p, dmgIn, Rin, fromNet) {
   SND.play('boom'); shakeAmt = Math.max(shakeAmt, 0.3);
   if (mode === 'raid') alertAround(p, 30);
   burst(p, '#f0a530', 18, 7); burst(p, '#ffe2a0', 8, 5); burst(p, '#3a3530', 10, 4);
@@ -2391,6 +2394,13 @@ function explode(p, dmgIn, Rin) {
   }
   const pb = new THREE.Vector3(P.pos.x, P.pos.y - 0.8, P.pos.z), pd = pb.distanceTo(p);
   if (pd < R && blastReach(p, pb, 0.8)) hurtPlayer(Math.round(dmg * SELF_BLAST * (1 - Math.min(1, pd / R) * 0.6)));
+  // 내가 터뜨린 폭발은 팀원에게도 같은 비율로 피해 (팀킬)
+  if (!fromNet) for (const mt of MATES.values()) {
+    if (!mt.g.visible) continue;
+    const mb = mt.g.position.clone(); mb.y += 0.9;
+    const md = mb.distanceTo(p);
+    if (md < R && blastReach(p, mb, 0.8)) hitMate(mt, dmg * SELF_BLAST * (1 - Math.min(1, md / R) * 0.6) / PVP_MUL, false);
+  }
   if (hit) { showHit(kill); SND.play('hit'); }
 }
 const FRAG_DMG = 320, FRAG_R = 5, FRAG_FUSE = 2;
@@ -3034,12 +3044,14 @@ function goDown() {
   mouseDown = false; aiming = false; reloading = 0; $('reloadTip').style.opacity = 0;
   crouch = true; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.add('lit'));
   $('downBox').hidden = false; SND.play('hurt');
+  if (NET.inRaid) netSend({ t:'e', k:'down' });
 }
 function downDeath(why) { P.downed = false; $('downBox').hidden = true; raidEnd(false, why); }
 // 팀원이 살려 줌 (멀티플레이에서 팀원이 F 키를 REVIVE_T 초 누르면 호출)
 function revivePlayer(hp = REVIVE_HP) {
   if (!P.downed) return;
   P.downed = false; P.hp = hp; $('downBox').hidden = true; setCrouch(false); say('일어났습니다', 1);
+  if (NET.inRaid) netSend({ t:'e', k:'up' });
 }
 function updateDown(dt) {
   if (!P.downed) return;
@@ -3633,6 +3645,7 @@ function bagUsed() { return raid.bag.reduce((a, id) => a + ITEMS[id].size, 0); }
 function nearGate() { return VAULTS.find(v => !v.open && Math.hypot(v.x - P.pos.x, v.z - P.pos.z) < 2.4 && Math.abs(P.pos.y - 1.7 - (v.y || 0)) < 1) || null; }
 function interact() {
   if (state !== 'play' || !raid || P.downed) return;
+  if (nearDownedMate()) return; // 쓰러진 팀원 옆에서는 F 를 누르고 있으면 살리기
   const gate = nearGate();
   if (gate) {
     const i = raid.bag.indexOf('keycard');
@@ -4166,7 +4179,8 @@ function beginRaid() {
   const rcfg = RAID[mapKey];
   let spawn = null;
   if (rcfg.spawns) {
-    spawn = rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
+    // 멀티플레이: 서버가 정한 순번과 seed 로 서로 다른 출발 위치를 받음
+    spawn = NET.inRaid && NET.order >= 0 ? rcfg.spawns[(NET.seed + NET.order) % rcfg.spawns.length] : rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
     const q = navSpot(spawn.x, spawn.z, spawn.y);
     START = { x:q[0], y:q[2] + 1.7, z:q[1], yaw:spawn.yaw };
   } else START = BASE_START;
@@ -4334,6 +4348,7 @@ function drawRadar(dt) {
   g.strokeStyle = 'rgba(125,255,160,.55)'; g.lineWidth = 3; g.beginPath(); g.arc(c, c, c - 2, 0, Math.PI * 2); g.stroke();
 }
 function updateRaid(dt) {
+  updateNet(dt);
   raid.t -= dt;
   if (raid.t <= 0) { raidEnd(false, '제한 시간 안에 탈출하지 못해 사망했습니다'); return; }
   const el = raid.cfg.time - raid.t;
@@ -4397,6 +4412,7 @@ function stashBagItem(r, id, i) {
 }
 function raidEnd(ok, why) {
   if (!raid) return;
+  if (NET.inRaid) { netSend({ t:'e', k:ok ? 'extract' : 'dead' }); clearMates(); }
   P.downed = false; $('downBox').hidden = true;
   $('invOv').hidden = true; invBox = null;
   const r = raid;
@@ -4504,7 +4520,7 @@ const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
 const coopBonus = n => COOP_BONUS[Math.max(1, Math.min(MAX_ROOM, n | 0))];
 const coopPct = n => Math.round(coopBonus(n) * 100) + '%';
-const NET = { ws:null, st:'off', id:0, room:null, list:[], err:'', retry:0, rt:0, closing:false, inRaid:false };
+const NET = { ws:null, st:'off', id:0, room:null, list:[], err:'', retry:0, rt:0, closing:false, inRaid:false, seed:0, order:-1 };
 const escH = v => String(v).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
 function netSend(o) { if (NET.ws && NET.ws.readyState === 1) NET.ws.send(JSON.stringify(o)); }
 function netConnect() {
@@ -4540,15 +4556,121 @@ function netOn(m) {
     NET.room = m.room;
     if (MAPS[m.room.map] && raidMap !== m.room.map && state !== 'play') { raidMap = m.room.map; if (vis) buildLevel(raidMap); }
   }
-  else if (m.t === 'start') { NET.room = m.room; netStartRaid(); return; }
-  else return; // 위치, AI 적, 사건 정보는 다음 단계에서 연결
+  else if (m.t === 'start') { NET.room = m.room; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; netStartRaid(); return; }
+  else if (m.t === 'S') { if (NET.inRaid && Array.isArray(m.p)) for (const a of m.p) mateState(a); return; }
+  else if (m.t === 'e') { netEvent(m); return; }
+  else if (m.t === 'left') { dropMate(m.id); if (NET.room) NET.room.host = m.host; return; }
+  else return;
   if (vis) renderHideout();
+}
+// ---------- 함께 출격한 팀원 ----------
+// 팀원은 단순한 사람 모형으로 표시하고, 머리 위에 닉네임을 띄움. 1초에 15번 받는 위치 사이를 부드럽게 이어 줌
+const PVP_MUL = 0.5, MATE_COL = '#3f6f9a';
+const MATES = new Map();
+const mateMats = { body:std(MATE_COL), dark:std('#2a3440'), skin:std('#c9a27e') };
+function nickOf(id) { const p = NET.room && NET.room.players.find(x => x.id === id); return p ? p.nick : '팀원'; }
+function nameTag(text) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = 'bold 34px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(text, 128, 32);
+  g.fillStyle = '#9fd4ff'; g.fillText(text, 128, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:new THREE.CanvasTexture(c), depthTest:false, transparent:true }));
+  sp.scale.set(1.6, 0.4, 1); sp.renderOrder = 10;
+  return sp;
+}
+function makeMate(id) {
+  const g = new THREE.Group(), body = new THREE.Group();
+  g.add(body);
+  part(body, BOX, mateMats.dark, [0.22, 0.8, 0.24], [-0.13, 0.4, 0]);
+  part(body, BOX, mateMats.dark, [0.22, 0.8, 0.24], [0.13, 0.4, 0]);
+  part(body, BOX, mateMats.body, [0.56, 0.7, 0.32], [0, 1.15, 0]);
+  part(body, BOX, mateMats.body, [0.16, 0.62, 0.18], [-0.38, 1.12, 0]);
+  part(body, BOX, mateMats.body, [0.16, 0.62, 0.18], [0.38, 1.12, 0]);
+  const head = part(body, BOX, mateMats.skin, [0.3, 0.3, 0.3], [0, 1.66, 0]); head.userData.head = true;
+  part(body, BOX, mateMats.dark, [0.08, 0.08, 0.55], [0.22, 1.2, -0.3]); // 총
+  const tag = nameTag(nickOf(id)); tag.position.set(0, 2.25, 0); g.add(tag);
+  const mt = { id, g, body, tag, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
+  g.userData.mate = mt; g.visible = false;
+  scene.add(g); MATES.set(id, mt);
+  return mt;
+}
+function mateState(a) {
+  if (!Array.isArray(a) || a.length < 7) return;
+  const id = a[0] | 0; if (id === NET.id) return;
+  const mt = MATES.get(id) || makeMate(id);
+  mt.tx = +a[1]; mt.ty = +a[2] - 1.7; mt.tz = +a[3]; mt.yaw = +a[4]; mt.pitch = +a[5]; mt.flags = a[6] | 0; mt.down = !!(mt.flags & 2);
+  if (!mt.seen) { mt.seen = true; mt.g.position.set(mt.tx, mt.ty, mt.tz); mt.g.visible = true; }
+}
+function dropMate(id) { const mt = MATES.get(id); if (!mt) return; scene.remove(mt.g); MATES.delete(id); }
+function clearMates() { for (const id of [...MATES.keys()]) dropMate(id); }
+function mateMeshes() { const a = []; for (const mt of MATES.values()) if (mt.g.visible) a.push(mt.g); return a; }
+function hitMate(mt, dmg, head) {
+  if (!NET.inRaid) return;
+  netSend({ t:'e', k:'hit', to:mt.id, dmg:Math.max(1, Math.round(dmg * PVP_MUL)), head:!!head });
+}
+function nearDownedMate() {
+  if (!NET.inRaid) return null;
+  for (const mt of MATES.values()) if (mt.g.visible && mt.down && Math.hypot(mt.g.position.x - P.pos.x, mt.g.position.z - P.pos.z) < 2.2 && Math.abs(mt.g.position.y - (P.pos.y - 1.7)) < 1.2) return mt;
+  return null;
+}
+let netSendT = 0, reviveT = 0, reviveWho = null;
+function updateNet(dt) {
+  if (!NET.inRaid) return;
+  // 내 상태 보내기: [x, y, z, yaw, pitch, flags, 무기, 체력]
+  netSendT -= dt;
+  if (netSendT <= 0) {
+    netSendT = 1 / 15;
+    const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0);
+    netSend({ t:'s', p:[+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.yaw.toFixed(2), +P.pitch.toFixed(2), f, weapon, Math.round(P.hp)] });
+  }
+  // 팀원 모형 움직이기
+  const k = 1 - Math.exp(-14 * dt);
+  for (const mt of MATES.values()) {
+    if (!mt.g.visible) continue;
+    const g = mt.g;
+    g.position.x += (mt.tx - g.position.x) * k; g.position.y += (mt.ty - g.position.y) * k; g.position.z += (mt.tz - g.position.z) * k;
+    let dy = mt.yaw - g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); g.rotation.y += dy * k;
+    // 쓰러지면 눕고, 앉으면 몸을 낮춤
+    const lie = mt.down ? -Math.PI / 2 : 0, sq = mt.flags & 1 && !mt.down ? 0.72 : 1;
+    mt.body.rotation.x += (lie - mt.body.rotation.x) * k;
+    mt.body.position.y += ((mt.down ? 0.2 : 0) - mt.body.position.y) * k;
+    mt.body.scale.y += (sq - mt.body.scale.y) * k;
+    mt.tag.position.y = mt.down ? 0.9 : 2.25 * sq;
+  }
+  // 쓰러진 팀원 살리기: 옆에서 F 를 계속 누르고 있기
+  const dm = !P.downed && keys.KeyF ? nearDownedMate() : null;
+  if (dm && dm === reviveWho) {
+    reviveT += dt;
+    say(`${nickOf(dm.id)} 살리는 중 ${Math.min(100, Math.round(reviveT / REVIVE_T * 100))}%`);
+    if (reviveT >= REVIVE_T) { netSend({ t:'e', k:'revive', to:dm.id }); dm.down = false; reviveT = 0; reviveWho = null; }
+  } else { reviveWho = dm; reviveT = 0; }
+}
+function netEvent(m) {
+  const from = m.from | 0, mt = MATES.get(from);
+  if (m.k === 'hit') {
+    if (state !== 'play' && state !== 'inv') return;
+    const d = Math.min(400, Math.max(0, +m.dmg || 0));
+    hurtPlayer(d); say(`${nickOf(from)}에게 맞았습니다`, 1);
+  } else if (m.k === 'revive') {
+    if (m.to === NET.id) revivePlayer();
+    else { const t = MATES.get(m.to); if (t) t.down = false; }
+  } else if (m.k === 'down') { if (mt) mt.down = true; say(`${nickOf(from)}이(가) 쓰러졌습니다`, 1); }
+  else if (m.k === 'up') { if (mt) mt.down = false; }
+  else if (m.k === 'dead') { dropMate(from); say(`${nickOf(from)}이(가) 사망했습니다`, 1); }
+  else if (m.k === 'extract') { dropMate(from); say(`${nickOf(from)}이(가) 탈출했습니다`, 1); }
+  else if (m.k === 'shot' && mt && mt.g.visible) {
+    // 팀원 사격: 총구 쪽에서 바라보는 방향으로 짧은 궤적
+    const o = mt.g.position.clone(); o.y += mt.flags & 1 ? 1.0 : 1.4;
+    const dir = new THREE.Vector3(-Math.sin(mt.yaw) * Math.cos(mt.pitch), Math.sin(mt.pitch), -Math.cos(mt.yaw) * Math.cos(mt.pitch));
+    addTracer(o.clone().addScaledVector(dir, 0.6), o.clone().addScaledVector(dir, 40));
+  }
 }
 function netStartRaid() {
   if (state === 'play' || $('hideOv').hidden) return;
   const r = NET.room;
   if (MAPS[r.map]) { raidMap = r.map; buildLevel(raidMap); }
-  HL.coop = true; NET.inRaid = true;
+  HL.coop = true; NET.inRaid = true; clearMates();
   fixPack(); saveHL(); saveStash();
   beginRaid();
   if (raid && state === 'play') raid.coopN = r.players.length;
