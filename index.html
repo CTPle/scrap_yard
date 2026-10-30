@@ -287,7 +287,6 @@ body:not(.is-raid) .raidonly{ display:none; }
 body.is-raid .waveonly{ display:none; }
 .modebar{ position:sticky; top:-24px; z-index:3; display:flex; gap:8px; margin:0 0 1em; padding:10px 0; background:rgb(14,17,22); }
 .modebar button{ flex:1; font:inherit; font-size:19px; font-weight:700; padding:12px 10px; border:2px solid rgba(241,233,216,.22); background:rgba(255,255,255,.04); color:var(--dim); cursor:pointer; text-align:center; }
-.modebar button small{ display:block; font-size:12px; font-weight:500; margin-top:4px; }
 .modebar button[aria-pressed="true"]{ border-color:var(--amber); color:var(--amber); background:rgba(240,165,48,.12); }
 .modebar button.coop[aria-pressed="true"]{ border-color:var(--red); color:#ff8a70; background:rgba(224,82,58,.14); }
 .roombox{ border:1px solid rgba(224,82,58,.45); background:rgba(224,82,58,.06); padding:12px; margin:0 0 1.2em; }
@@ -4561,13 +4560,13 @@ function renderRoom() {
   const el = $('hRoom');
   el.hidden = !HL.coop;
   if (!HL.coop) return;
-  let h = `<div class="roomhead"><b>협동전 방</b><span class="hint">방을 만들거나 목록에서 골라 입장합니다. 비밀방은 코드로만 입장합니다. 탈출에 성공하면 가져온 물건 가치의 ${coopPct(1)}(1명)~${coopPct(MAX_ROOM)}(${MAX_ROOM}명)를 크레딧으로 더 받고, 인원이 많을수록 늘어나는 폭이 커집니다. 쓰러지면 ${BLEED_T}초 안에 팀원이 살릴 수 있고, 팀킬이 됩니다.</span></div>`;
+  let h = `<div class="roomhead"><b>협동전 방</b></div>`;
   if (!STASH.nick) h += '<p class="hint">협동전 방을 쓰려면 위에서 닉네임을 먼저 정해 주십시오</p>';
   else if (NET.st !== 'on') {
     h += `<div class="opts"><span class="hint">${NET.ws ? '서버에 연결하는 중입니다. 서버가 잠들어 있었다면 1분쯤 걸립니다' : escH(NET.err || '서버에 연결되어 있지 않습니다')}</span>${NET.ws ? '' : '<button class="opt" id="netRe">다시 연결</button>'}</div>`;
   } else if (NET.room) {
     const r = NET.room, host = r.host === NET.id;
-    h += `<div class="roominfo">${r.priv ? '비밀방' : '공개방'} 코드 <span class="code">${escH(r.code)}</span> · ${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)} · ${r.players.length}/${MAX_ROOM}명 · 지금 인원 보상 +${coopPct(r.players.length)}</div>`
+    h += `<div class="roominfo">${r.priv ? '비밀방' : '공개방'} 코드 <span class="code">${escH(r.code)}</span> · ${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)} · ${r.players.length}/${MAX_ROOM}명</div>`
       + `<div class="roomplayers">${r.players.map(p => `<span class="${p.id === r.host ? 'host' : ''}">${escH(p.nick)}${p.id === r.host ? ' (방장)' : ''}${p.id === NET.id ? ' (나)' : ''}</span>`).join('')}</div>`
       + `<div class="opts"><button class="opt" id="roomLeave">방 나가기</button><span class="hint">${r.started ? '방원이 아직 출격 중입니다. 모두 돌아오면 다시 출격할 수 있습니다' : host ? '아래 출격 버튼을 누르면 방 전체가 함께 출격합니다' : '방장이 출격을 시작하면 함께 출격합니다'}</span></div>`;
   } else {
@@ -4594,8 +4593,8 @@ function renderHideout() {
   $('credTxt').textContent = STASH.credits.toLocaleString();
   const total = Object.entries(it).reduce((a, [id, n]) => a + (ITEMS[id] ? ITEMS[id].value * n : 0), 0) + STASH.guns.reduce((a, g) => a + gunValue(g), 0) + STASH.keys.reduce((a, u) => a + keyValue(u), 0);
   $('stashVal').textContent = `(창고 가치 ${total.toLocaleString()})`;
-  $('hModes').innerHTML = `<button data-coop="0" aria-pressed="${!HL.coop}">일반 모드<small>혼자 출격, 기본 난이도</small></button>`
-    + `<button class="coop" data-coop="1" aria-pressed="${!!HL.coop}">협동전 모드<small>적 체력, 공격력 ${COOP_HP}배 / 보상 +${coopPct(1)}~${coopPct(MAX_ROOM)}</small></button>`;
+  $('hModes').innerHTML = `<button data-coop="0" aria-pressed="${!HL.coop}">일반 모드</button>`
+    + `<button class="coop" data-coop="1" aria-pressed="${!!HL.coop}">협동전 모드</button>`;
   const roomLock = HL.coop && NET.room;
   $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name}</button>`).join('')
     + (roomLock ? '<span class="hint">방에 들어가 있는 동안에는 방의 맵으로 고정됩니다</span>' : '');
