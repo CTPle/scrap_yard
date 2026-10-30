@@ -3567,7 +3567,7 @@ if (!STASH.guns) { STASH.guns = []; STASH.nextUid = 1; }
 for (const id of Object.keys(STASH.items)) if (ITEMS[id] && ITEMS[id].kind === 'weapon') { for (let k = 0; k < STASH.items[id]; k++) STASH.guns.push(newGun(id)); delete STASH.items[id]; }
 function newGun(id) { return { uid:STASH.nextUid++, id, up:{ dmg:0, rec:0, rel:0, mag:0 } }; }
 const UPG = {
-  rec:{ name:'반동', per:0.15, txt:l => `-${l * 15}%` },
+  rec:{ name:'반동', per:0.08, txt:l => `-${l * 8}%` }, // 단계당 8% (최대 5단계 -40%)
   rel:{ name:'재장전', per:0.12, txt:l => `-${l * 12}%` },
   mag:{ name:'탄창', per:0.2, txt:l => `+${l * 20}%` }
 };
@@ -4651,7 +4651,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.3';
+const GAME_VER = 'v1.2.4';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
