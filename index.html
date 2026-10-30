@@ -4194,9 +4194,12 @@ function beginRaid() {
   const rcfg = RAID[mapKey];
   let spawn = null;
   if (rcfg.spawns) {
-    // 멀티플레이: 서버가 정한 순번과 seed 로 서로 다른 출발 위치를 받음
-    spawn = NET.inRaid && NET.order >= 0 ? rcfg.spawns[(NET.seed + NET.order) % rcfg.spawns.length] : rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
-    const q = navSpot(spawn.x, spawn.z, spawn.y);
+    // 협동전: 같은 방 사람은 모두 같은 출발 위치(서버가 정한 seed)에서 순번대로 조금씩 떨어져 시작
+    const mp = NET.inRaid && NET.order >= 0;
+    spawn = mp ? rcfg.spawns[NET.seed % rcfg.spawns.length] : rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
+    let sx = spawn.x, sz = spawn.z;
+    if (mp && NET.order > 0) { const a = NET.order * 2.4, r = 1.6 + Math.floor((NET.order - 1) / 6) * 1.4; sx += Math.cos(a) * r; sz += Math.sin(a) * r; }
+    const q = navSpot(sx, sz, spawn.y);
     START = { x:q[0], y:q[2] + 1.7, z:q[1], yaw:spawn.yaw };
   } else START = BASE_START;
   resetGame();
@@ -4532,7 +4535,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.0.0';
+const GAME_VER = 'v1.0.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
