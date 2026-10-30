@@ -2404,7 +2404,7 @@ function explode(p, dmgIn, Rin, fromNet) {
     if (!mt.g.visible) continue;
     const mb = mt.g.position.clone(); mb.y += 0.9;
     const md = mb.distanceTo(p);
-    if (md < R && blastReach(p, mb, 0.8)) hitMate(mt, dmg * SELF_BLAST * (1 - Math.min(1, md / R) * 0.6) / PVP_MUL, false);
+    if (md < R && blastReach(p, mb, 0.8)) hitMate(mt, dmg * SELF_BLAST * (1 - Math.min(1, md / R) * 0.6), false, true);
   }
   if (hit) { showHit(kill); SND.play('hit'); }
 }
@@ -3075,7 +3075,7 @@ function updateDown(dt) {
   if (P.bleedT <= 0) downDeath('쓰러진 뒤 출혈로 사망했습니다');
 }
 function hurtPlayer(d) {
-  if (aimMate) { hitMate(aimMate, d / PVP_MUL, false); return; } // 적이 팀원을 노리다 준 근접 피해는 팀원에게
+  if (aimMate) { hitMate(aimMate, d, false, true); return; } // 적이 팀원을 노리다 준 근접 피해는 팀원에게
   if (state !== 'play' && state !== 'inv') return;
   d *= P.defMul || 1;
   if (P.downed) {
@@ -4195,9 +4195,9 @@ function beginRaid() {
   const rcfg = RAID[mapKey];
   let spawn = null;
   if (rcfg.spawns) {
-    // 협동전: 같은 방 사람은 모두 같은 출발 위치(서버가 정한 seed)에서 순번대로 조금씩 떨어져 시작
+    // 협동전: 같은 파티는 같은 출발 위치에서 순번대로 조금씩 떨어져 시작. 같은 판의 다른 파티는 다른 출발 위치(slot)
     const mp = NET.inRaid && NET.order >= 0;
-    spawn = mp ? rcfg.spawns[NET.seed % rcfg.spawns.length] : rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
+    spawn = mp ? rcfg.spawns[(NET.seed + (NET.slot || 0)) % rcfg.spawns.length] : rcfg.spawns[Math.floor(Math.random() * rcfg.spawns.length)];
     let sx = spawn.x, sz = spawn.z;
     if (mp && NET.order > 0) { const a = NET.order * 2.4, r = 1.6 + Math.floor((NET.order - 1) / 6) * 1.4; sx += Math.cos(a) * r; sz += Math.sin(a) * r; }
     const q = navSpot(sx, sz, spawn.y);
@@ -4543,9 +4543,9 @@ function renderNick() {
   $('nickEditBtn').onclick = () => { if (nickWait() > 0) return; nickEdit = true; nickErr = ''; renderNick(); };
 }
 // ---------- 협동전 방 (멀티플레이 서버) ----------
-const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
+const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.0.3';
+const GAME_VER = 'v1.1.0';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4587,20 +4587,23 @@ function netOn(m) {
     NET.room = m.room;
     if (MAPS[m.room.map] && raidMap !== m.room.map && state !== 'play') { raidMap = m.room.map; if (vis) buildLevel(raidMap); }
   }
-  else if (m.t === 'start') { NET.room = m.room; NET.ai = (m.ai | 0) || (m.room && m.room.host) || 0; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; netStartRaid(); return; }
+  else if (m.t === 'start') { NET.room = m.room; NET.ai = (m.ai | 0) || (m.room && m.room.host) || 0; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; NET.slot = m.slot | 0; netStartRaid(); return; }
   else if (m.t === 'S') { if (NET.inRaid && Array.isArray(m.p)) for (const a of m.p) mateState(a); return; }
   else if (m.t === 'e') { netEvent(m); return; }
   else if (m.t === 'ai') { netAI(m.d); return; }
   else if (m.t === 'aihost') { netTakeAI(m.id | 0); return; }
   else if (m.t === 'left') { dropMate(m.id); if (NET.room) NET.room.host = m.host; return; }
+  else if (m.t === 'gone') { dropMate(m.id | 0); return; }
   else return;
   if (vis) renderHideout();
 }
 // ---------- 함께 출격한 팀원 ----------
 // 팀원은 단순한 사람 모형으로 표시하고, 머리 위에 닉네임을 띄움. 1초에 15번 받는 위치 사이를 부드럽게 이어 줌
-const PVP_MUL = 0.5, MATE_COL = '#3f6f9a';
+// 같은 파티끼리(팀킬)는 피해 0.5배, 같은 판의 다른 파티에게는 그대로
+const PVP_MUL = 0.5, MATE_COL = '#3f6f9a', FOE_COL = '#6a5a3c';
 const MATES = new Map();
-const mateMats = { body:std(MATE_COL), dark:std('#2a3440'), skin:std('#c9a27e') };
+const mateMats = { body:std(MATE_COL), dark:std('#2a3440'), skin:std('#c9a27e') }, foeMats = { body:std(FOE_COL), dark:std('#2e2a22'), skin:std('#c9a27e') };
+const isParty = id => !!(NET.room && NET.room.players.some(p => p.id === id));
 function nickOf(id) { const p = NET.room && NET.room.players.find(x => x.id === id); return p ? p.nick : '팀원'; }
 function nameTag(text) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
@@ -4614,17 +4617,19 @@ function nameTag(text) {
   return sp;
 }
 function makeMate(id) {
+  // 같은 파티: 파란 옷과 머리 위 닉네임 / 다른 파티: 갈색 옷, 이름 없음
+  const party = isParty(id), M2 = party ? mateMats : foeMats;
   const g = new THREE.Group(), body = new THREE.Group();
   g.add(body);
-  part(body, BOX, mateMats.dark, [0.22, 0.8, 0.24], [-0.13, 0.4, 0]);
-  part(body, BOX, mateMats.dark, [0.22, 0.8, 0.24], [0.13, 0.4, 0]);
-  part(body, BOX, mateMats.body, [0.56, 0.7, 0.32], [0, 1.15, 0]);
-  part(body, BOX, mateMats.body, [0.16, 0.62, 0.18], [-0.38, 1.12, 0]);
-  part(body, BOX, mateMats.body, [0.16, 0.62, 0.18], [0.38, 1.12, 0]);
-  const head = part(body, BOX, mateMats.skin, [0.3, 0.3, 0.3], [0, 1.66, 0]); head.userData.head = true;
-  part(body, BOX, mateMats.dark, [0.08, 0.08, 0.55], [0.22, 1.2, -0.3]); // 총
-  const tag = nameTag(nickOf(id)); tag.position.set(0, 2.25, 0); g.add(tag);
-  const mt = { id, g, body, tag, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
+  part(body, BOX, M2.dark, [0.22, 0.8, 0.24], [-0.13, 0.4, 0]);
+  part(body, BOX, M2.dark, [0.22, 0.8, 0.24], [0.13, 0.4, 0]);
+  part(body, BOX, M2.body, [0.56, 0.7, 0.32], [0, 1.15, 0]);
+  part(body, BOX, M2.body, [0.16, 0.62, 0.18], [-0.38, 1.12, 0]);
+  part(body, BOX, M2.body, [0.16, 0.62, 0.18], [0.38, 1.12, 0]);
+  const head = part(body, BOX, M2.skin, [0.3, 0.3, 0.3], [0, 1.66, 0]); head.userData.head = true;
+  part(body, BOX, M2.dark, [0.08, 0.08, 0.55], [0.22, 1.2, -0.3]); // 총
+  const tag = party ? nameTag(nickOf(id)) : new THREE.Object3D(); tag.position.set(0, 2.25, 0); g.add(tag);
+  const mt = { id, g, body, tag, party, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
   g.userData.mate = mt; g.visible = false;
   scene.add(g); MATES.set(id, mt);
   return mt;
@@ -4639,13 +4644,14 @@ function mateState(a) {
 function dropMate(id) { const mt = MATES.get(id); if (!mt) return; scene.remove(mt.g); MATES.delete(id); }
 function clearMates() { for (const id of [...MATES.keys()]) dropMate(id); }
 function mateMeshes() { const a = []; for (const mt of MATES.values()) if (mt.g.visible) a.push(mt.g); return a; }
-function hitMate(mt, dmg, head) {
+function hitMate(mt, dmg, head, exact) {
   if (!NET.inRaid) return;
-  netSend({ t:'e', k:'hit', to:mt.id, dmg:Math.max(1, Math.round(dmg * PVP_MUL)), head:!!head });
+  const d = exact ? dmg : dmg * (mt.party ? PVP_MUL : 1);
+  netSend({ t:'e', k:'hit', to:mt.id, dmg:Math.max(1, Math.round(d)), head:!!head });
 }
 function nearDownedMate() {
   if (!NET.inRaid) return null;
-  for (const mt of MATES.values()) if (mt.g.visible && mt.down && Math.hypot(mt.g.position.x - P.pos.x, mt.g.position.z - P.pos.z) < 2.2 && Math.abs(mt.g.position.y - (P.pos.y - 1.7)) < 1.2) return mt;
+  for (const mt of MATES.values()) if (mt.g.visible && mt.party && mt.down && Math.hypot(mt.g.position.x - P.pos.x, mt.g.position.z - P.pos.z) < 2.2 && Math.abs(mt.g.position.y - (P.pos.y - 1.7)) < 1.2) return mt;
   return null;
 }
 let netSendT = 0, reviveT = 0, reviveWho = null, hitSendT = 0, aiSendT = 0, aiFullT = 0;
@@ -4843,14 +4849,14 @@ function netEvent(m) {
   if (m.k === 'hit') {
     if (state !== 'play' && state !== 'inv') return;
     const d = Math.min(400, Math.max(0, +m.dmg || 0));
-    hurtPlayer(d); say(`${nickOf(from)}에게 맞았습니다`, 1);
+    hurtPlayer(d); if (isParty(from)) say(`${nickOf(from)}에게 맞았습니다`, 1);
   } else if (m.k === 'revive') {
     if (m.to === NET.id) revivePlayer();
     else { const t = MATES.get(m.to); if (t) t.down = false; }
-  } else if (m.k === 'down') { if (mt) mt.down = true; say(`${nickOf(from)}이(가) 쓰러졌습니다`, 1); }
+  } else if (m.k === 'down') { if (mt) mt.down = true; if (isParty(from)) say(`${nickOf(from)}이(가) 쓰러졌습니다`, 1); }
   else if (m.k === 'up') { if (mt) mt.down = false; }
-  else if (m.k === 'dead') { dropMate(from); say(`${nickOf(from)}이(가) 사망했습니다`, 1); }
-  else if (m.k === 'extract') { dropMate(from); say(`${nickOf(from)}이(가) 탈출했습니다`, 1); }
+  else if (m.k === 'dead') { dropMate(from); if (isParty(from)) say(`${nickOf(from)}이(가) 사망했습니다`, 1); }
+  else if (m.k === 'extract') { dropMate(from); if (isParty(from)) say(`${nickOf(from)}이(가) 탈출했습니다`, 1); }
   else if (m.k === 'shot' && mt && mt.g.visible) {
     // 팀원 사격: 총구 쪽에서 바라보는 방향으로 짧은 궤적
     const o = mt.g.position.clone(); o.y += mt.flags & 1 ? 1.0 : 1.4;
