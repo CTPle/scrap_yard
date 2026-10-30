@@ -2915,19 +2915,15 @@ function updateEnemy(e, dt, eye) {
           } else e.cd = 0.3;
         }
       } else if (e.type === 'snp') {
-        // 저격수: 1.4초 동안 붉은 조준선을 겨눈 뒤 아주 강한 한 발. 시야를 잃으면 조준 취소
+        // 저격수: 1.4초 동안 조준한 뒤 아주 강한 한 발 (조준선은 표시하지 않음). 시야를 잃으면 조준 취소
         e.cd -= dt;
         if (e.aiming) {
           e.aimT -= dt;
           const from = g.position.clone().add(new THREE.Vector3(nx * 0.9 + nz * 0.25, 1.5, nz * 0.9 - nx * 0.25));
-          if (!e.aimLine) { e.aimLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, EYE.clone()]), new THREE.LineBasicMaterial({ color:'#ff2a1e', transparent:true, opacity:0.85 })); e.aimLine.frustumCulled = false; scene.add(e.aimLine); }
-          const pa = e.aimLine.geometry.attributes.position; pa.setXYZ(0, from.x, from.y, from.z); pa.setXYZ(1, EYE.x, EYE.y - 0.15, EYE.z); pa.needsUpdate = true;
-          e.aimLine.material.opacity = 0.4 + (1 - e.aimT / 1.4) * 0.6;
-          e.aimLine.visible = true;
-          if (!e.seen) { e.aiming = false; e.aimLine.visible = false; e.cd = 1.2; }
+          if (!e.seen) { e.aiming = false; e.cd = 1.2; }
           else if (e.aimT <= 0) {
             enemyShoot(e, from, 170, 75, '#ff3a2e', 0.004); SND.play('sniper');
-            e.aiming = false; e.aimLine.visible = false; e.cd = 4.5; e.kickT = 0.2;
+            e.aiming = false; e.cd = 4.5; e.kickT = 0.2;
           }
         } else if (e.cd <= 0 && e.seen) { e.aiming = true; e.aimT = 1.4; SND.play('charge', 1.4); }
       } else if (e.type === 'bguard') {
