@@ -108,7 +108,7 @@ function onMessage(c, msg) {
     c.nick = nick;
     c.ver = typeof msg.ver === 'string' ? msg.ver.slice(0, 20) : '';
     if (c.room) sendRoom(c.room);
-    return send(c, { t: 'welcome', id: c.id });
+    return send(c, { t: 'welcome', id: c.id, now: Date.now() }); // now: 세션 시계를 맞추는 서버 시간
   }
   if (!c.nick) return send(c, { t: 'err', m: '먼저 닉네임을 보내야 합니다' });
 

@@ -286,6 +286,7 @@ body.dropping #dropHint{ display:flex; }
 body:not(.is-raid) .raidonly{ display:none; }
 body.is-raid .waveonly{ display:none; }
 .verTag{ position:fixed; right:10px; bottom:8px; font-size:12px; color:var(--dim); opacity:.75; font-family:monospace; pointer-events:none; z-index:6; }
+.sessT{ font-size:11.5px; color:var(--dim); margin-left:4px; font-variant-numeric:tabular-nums; }
 .modebar{ position:sticky; top:-24px; z-index:3; display:flex; gap:8px; margin:0 0 1em; padding:10px 0; background:rgb(14,17,22); }
 .modebar button{ flex:1; font:inherit; font-size:19px; font-weight:700; padding:12px 10px; border:2px solid rgba(241,233,216,.22); background:rgba(255,255,255,.04); color:var(--dim); cursor:pointer; text-align:center; }
 .modebar button[aria-pressed="true"]{ border-color:var(--amber); color:var(--amber); background:rgba(240,165,48,.12); }
@@ -3424,7 +3425,7 @@ const RAID = {
     loot:[[-4, -27, 'weapon'], [4, 27, 'misc'], [-27, 4, 'tech'], [27, -4, 'misc'], [-20, -34, 'weapon'], [20, 34, 'tech'], [31, -26, 'misc'],
           [-31, 26, 'weapon'], [-10, 24.5, 'misc'], [12, -24.5, 'med'], [-38, -17, 'misc'], [38, 17, 'med'], [2, -2, 'med', 3.2]],
     ext:[{ name:'화물 트럭', x:-44, z:-44 }, { name:'정문', x:44, z:44 }], boss:[28, -36], jugg:[36, 26] },
-  lab:{ extMinDist:60, time:1500, minDist:22, enemies:18, reinfAt:'opposite', bossMul:{ hp:1.6, dmg:1.35, spd:1.25, leash:32 }, alertR:24,
+  lab:{ extMinDist:60, time:3000, minDist:22, enemies:18, reinfAt:'opposite', bossMul:{ hp:1.6, dmg:1.35, spd:1.25, leash:32 }, alertR:24,
     // [x, z, 상자 종류, 바닥 높이] 지하 3층 0, 지하 2층 6, 지하 1층 12
     loot:[
       // 지하 2층: 중앙 연구동 (기존 방)
@@ -3453,7 +3454,7 @@ const RAID = {
     spawns:[{ name:'지하 1층 입구 로비', x:40, y:12, z:44, yaw:0 }, { name:'지하 1층 숙소 구역', x:-43, y:12, z:-30, yaw:-Math.PI / 2 },
             { name:'지하 3층 화물 하역장', x:-30, y:0, z:-33, yaw:-Math.PI / 2 }, { name:'지하 2층 시료 보관고', x:-40, y:6, z:20, yaw:-Math.PI / 2 }],
     boss:[40, 30, 0] },
-  canyon:{ extMinDist:250, time:1200, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
+  canyon:{ extMinDist:250, time:3000, minDist:70, enemies:9, reinf:'squad', reinfAt:'opposite', fastHunt:true,
     loot:[[CX(0, 284), CZ(284), 'med', 3.2], [CX(-10, 250), CZ(250), 'misc'], [CX(10, 232), CZ(232), 'misc'],
           [CX(-11, 198), CZ(198), 'weapon'], [CX(11, 181), CZ(181), 'misc'], [CX(-11, 181), CZ(181), 'tech'],
           [CX(-6, 134), CZ(134), 'misc'], [CX(11, 102.5), CZ(102.5), 'weapon'], [CX(-11, 67.5), CZ(67.5), 'tech'], [CX(5, 18.5), CZ(18.5), 'misc'],
@@ -4208,7 +4209,8 @@ function beginRaid() {
   const AT = ARMOR_TIERS[HL.armor || 0]; P.ar = P.arMax = AT.pts; P.arAbs = AT.abs;
   for (const w of loadout) if (w) ammo[w].res = WEAPONS[w].charge ? Infinity : WEAPONS[w].mag * 2;
   const cfg = RAID[mapKey];
-  raid = { queues:{}, ammo:'std', rwave:0, t:cfg.time, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:REINF_GAP, warned:false, map:mapKey, cap,
+  const left0 = sessLeft(), el0 = cfg.time - left0, rw0 = Math.floor(el0 / REINF_GAP);
+  raid = { queues:{}, ammo:'std', rwave:rw0, t:left0, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:(rw0 + 1) * REINF_GAP >= cfg.time ? Infinity : (rw0 + 1) * REINF_GAP, warned:false, map:mapKey, cap,
     // 탈출 지점: 내 출발 위치에서 extMinDist 이상 떨어진 곳과 공용 탈출구. 누가 써도 사라지지 않음
     coop:!!HL.coop, spawn, exts:cfg.ext.filter(e => !spawn || e.shared || Math.hypot(e.x - spawn.x, e.z - spawn.z) + Math.abs((e.y || 0) - spawn.y) * 2 >= cfg.extMinDist) };
   // 주무기 탄약 묶음 구성
@@ -4294,7 +4296,14 @@ function reinfUnit(t, far) {
   return e;
 }
 // 증원: 4분마다 투입. 차수가 오를수록 분대가 1명씩 커짐 (최대 3명 추가)
-const REINF_GAP = 240, CMDR_WAVE = 2, JUGG_WAVE = 5;
+// 연구 시설은 5차씩 한 주기: 주기의 2번째는 증원 지휘관, 5번째는 파쇄기 (2, 5, 7, 10, 12, 15 ...차), 나머지는 정예 분대
+const REINF_GAP = 240;
+const isCmdrWave = n => (n - 1) % 5 + 1 === 2, isJuggWave = n => n % 5 === 0;
+// 세션: 맵마다 50분 단위로 모두가 같은 시계를 씀. 중간에 들어가면 남은 시간만 주어지고, 끝나면 남아 있는 사람은 사망
+// 시계는 서버 시간 기준 (연결 전이면 내 컴퓨터 시간)
+const SESSION_LEN = 3000;
+function sessLeft() { const t = (Date.now() + (NET.clockOff || 0)) / 1000; return SESSION_LEN - (t % SESSION_LEN); }
+const fmtMS = sec => { sec = Math.max(0, Math.ceil(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
 function squadList(n, base, maxExtra = 3) {
   const extra = ['grunt', 'brute', 'grunt'].slice(0, Math.min(maxExtra, Math.max(0, n - 1)));
   return base.concat(extra);
@@ -4308,22 +4317,22 @@ function spawnReinfUnits(n) {
     SND.play('alarm'); say(`${where}${n}차 정예 증원 분대가 투입되었습니다`, 1);
     return;
   }
-  if (n !== CMDR_WAVE && n !== JUGG_WAVE) {
+  if (!isCmdrWave(n) && !isJuggWave(n)) {
     // 지휘관, 파쇄기 차수가 아니면 정예 분대: 1차 6명, 3차 7명, 4차 이후 8명
-    const k = [1, 2, 3, 4, 5, 6, 7, 8].filter(i => i <= n && i !== CMDR_WAVE && i !== JUGG_WAVE).length;
+    let k = 0; for (let i = 1; i <= n; i++) if (!isCmdrWave(i) && !isJuggWave(i)) k++;
     for (const t of squadList(k, ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone'], 2)) makeElite(reinfUnit(t));
     SND.play('alarm'); say(`${where}${n}차 정예 증원 분대가 투입되었습니다`);
     return;
   }
-  if (n === CMDR_WAVE) {
-    // 2차: 증원 지휘관과 정예병 6명
+  if (isCmdrWave(n)) {
+    // 주기 2번째: 증원 지휘관과 정예병 6명
     for (const t of ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone']) makeElite(reinfUnit(t));
     const c = reinfUnit('boss', true);
     c.cmdr = true; c.name = '증원 지휘관'; c.hp = c.maxHp = 1500 * (raid.cfg.bossMul ? raid.cfg.bossMul.hp : 1);
     c.mats[2].color.set('#c9a21a'); c.mats[0].color.set('#1e2a3a');
     SND.play('roar'); say(`${where}증원 지휘관 부대가 투입되었습니다`);
   } else {
-    // 5차: 파쇄기와 정예병 4명
+    // 주기 5번째: 파쇄기와 정예병 4명
     for (const t of ['grunt', 'grunt', 'grunt', 'brute']) makeElite(reinfUnit(t));
     reinfUnit('jugg', true);
     SND.play('roar'); setTimeout(() => SND.play('roar'), 600); say(`${where}파쇄기가 투입되었습니다`);
@@ -4367,16 +4376,17 @@ function drawRadar(dt) {
 }
 function updateRaid(dt) {
   updateNet(dt);
-  raid.t -= dt;
-  if (raid.t <= 0) { raidEnd(false, '제한 시간 안에 탈출하지 못해 사망했습니다'); return; }
+  // 남은 시간은 세션 시계로 계산 (세션이 넘어가면 0)
+  { const left = sessLeft(); raid.t = left > raid.t + 5 ? 0 : left; }
+  if (raid.t <= 0) { raidEnd(false, '세션이 끝날 때까지 탈출하지 못해 사망했습니다'); return; }
   const el = raid.cfg.time - raid.t;
   const warnAt = STASH.fac.intel >= 2 ? 60 : 30;
   const nextWave = raid.rwave + 1;
   if (!raid.warned && el >= raid.nextReinf - warnAt) {
     raid.warned = true; SND.play('alarm');
     if (raid.cfg.reinf === 'squad') say(`경보: ${warnAt}초 뒤 ${nextWave}차 정예 증원 분대가 투입됩니다`);
-    else if (nextWave === JUGG_WAVE) { setTimeout(() => SND.play('alarm'), 1700); say(`경보: ${warnAt}초 뒤 파쇄기가 투입됩니다`); }
-    else if (nextWave === CMDR_WAVE) say(`경보: ${warnAt}초 뒤 증원 지휘관 부대가 투입됩니다`);
+    else if (isJuggWave(nextWave)) { setTimeout(() => SND.play('alarm'), 1700); say(`경보: ${warnAt}초 뒤 파쇄기가 투입됩니다`); }
+    else if (isCmdrWave(nextWave)) say(`경보: ${warnAt}초 뒤 증원 지휘관 부대가 투입됩니다`);
     else say(`경보: ${warnAt}초 뒤 ${nextWave}차 정예 증원 분대가 투입됩니다`);
   }
   P.calm += dt;
@@ -4535,7 +4545,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.0.2';
+const GAME_VER = 'v1.0.3';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4569,7 +4579,7 @@ function netConnect() {
 function netClose() { clearTimeout(NET.rt); if (!NET.ws) return; NET.closing = true; netSend({ t:'leave' }); NET.ws.close(); }
 function netOn(m) {
   const vis = !$('hideOv').hidden;
-  if (m.t === 'welcome') { NET.id = m.id; NET.st = 'on'; NET.err = ''; netSend({ t:'list' }); }
+  if (m.t === 'welcome') { NET.id = m.id; NET.st = 'on'; NET.err = ''; if (+m.now > 0) NET.clockOff = +m.now - Date.now(); netSend({ t:'list' }); }
   else if (m.t === 'err') NET.err = String(m.m || '');
   else if (m.t === 'list') NET.list = (m.rooms || []).filter(r => r && r.mode === 'coop' && /^[A-Z0-9]{4}$/.test(r.code));
   else if (m.t === 'joined') NET.err = '';
@@ -4859,6 +4869,8 @@ function netStartRaid() {
   if (raid && state === 'play') raid.coopN = r.players.length;
   else { NET.inRaid = false; netSend({ t:'lobby' }); renderHideout(); }
 }
+// 맵 선택의 세션 남은 시간: 은신처가 열려 있으면 1초마다 갱신
+setInterval(() => { if ($('hideOv').hidden) return; const t = '남은 ' + fmtMS(sessLeft()); document.querySelectorAll('[data-sess]').forEach(el => { el.textContent = t; }); }, 1000);
 // 파티 모집 목록은 파티 밖에 있을 때만 5초마다 새로 받음
 setInterval(() => { if (NET.st === 'on' && !NET.room && HL.coop && !$('hideOv').hidden) netSend({ t:'list' }); }, 5000);
 function renderRoom() {
@@ -4902,7 +4914,7 @@ function renderHideout() {
   $('hModes').innerHTML = `<button data-coop="0" aria-pressed="${!HL.coop}">일반 모드</button>`
     + `<button class="coop" data-coop="1" aria-pressed="${!!HL.coop}">협동전 모드</button>`;
   const roomLock = HL.coop && NET.room;
-  $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name}</button>`).join('')
+  $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name} <span class="sessT" data-sess>남은 ${fmtMS(sessLeft())}</span></button>`).join('')
     + (roomLock ? '<span class="hint">파티에 있는 동안에는 파티의 맵으로 고정됩니다</span>' : '');
   renderRoom();
   if (HL.coop && STASH.nick && !NET.ws && !NET.retry) netConnect();
