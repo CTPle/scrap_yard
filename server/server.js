@@ -64,7 +64,7 @@ function broadcast(room, obj, except) {
 
 function roomInfo(room) {
   return {
-    code: room.code, map: room.map, mode: room.mode, host: room.host, started: room.started,
+    code: room.code, map: room.map, mode: room.mode, priv: room.priv, host: room.host, started: room.started,
     players: [...room.players.values()].map(c => ({ id: c.id, nick: c.nick, team: c.team, ready: c.ready })),
   };
 }
@@ -85,6 +85,7 @@ function leaveRoom(c) {
   if (!room.players.size) { rooms.delete(room.code); return; }
   // 방장이 나가면 다음 사람이 방장 (AI 적 계산도 넘겨받음)
   if (room.host === c.id) room.host = room.players.keys().next().value;
+  if (room.started && ![...room.players.values()].some(p => p.inRaid)) room.started = false;
   broadcast(room, { t: 'left', id: c.id, host: room.host });
   sendRoom(room);
 }
@@ -102,7 +103,8 @@ function onMessage(c, msg) {
   if (!c.nick) return send(c, { t: 'err', m: '먼저 닉네임을 보내야 합니다' });
 
   if (t === 'list') {
-    const list = [...rooms.values()].filter(r => !r.started).map(r => ({
+    // 비밀방은 목록에 보이지 않음 (코드로만 입장)
+    const list = [...rooms.values()].filter(r => !r.started && !r.priv).map(r => ({
       code: r.code, map: r.map, mode: r.mode, n: r.players.size, max: MAX_ROOM,
     }));
     return send(c, { t: 'list', rooms: list });
@@ -113,7 +115,7 @@ function onMessage(c, msg) {
     if (rooms.size >= MAX_ROOMS) return send(c, { t: 'err', m: '서버에 방이 너무 많습니다. 잠시 뒤 다시 시도해 주세요' });
     if (!MAPS.includes(msg.map) || !MODES.includes(msg.mode)) return send(c, { t: 'err', m: '맵 또는 모드가 올바르지 않습니다' });
     if (msg.mode === 'team' && msg.map !== 'canyon') return send(c, { t: 'err', m: '팀전은 협곡에서만 할 수 있습니다' });
-    const room = { code: makeCode(), map: msg.map, mode: msg.mode, host: c.id, started: false, players: new Map(), tick: 0, seed: 0 };
+    const room = { code: makeCode(), map: msg.map, mode: msg.mode, priv: !!msg.priv, host: c.id, started: false, players: new Map(), tick: 0, seed: 0 };
     rooms.set(room.code, room);
     joinRoom(c, room, msg.team);
     return;
@@ -144,6 +146,13 @@ function onMessage(c, msg) {
 
   if (t === 'ready') { c.ready = !!msg.v; return sendRoom(room); }
 
+  // 출격이 끝나 은신처로 돌아옴. 모두 돌아오면 방이 다시 대기 상태가 됨
+  if (t === 'lobby') {
+    c.inRaid = false; c.state = null; c.down = false;
+    if (room.started && ![...room.players.values()].some(p => p.inRaid)) room.started = false;
+    return sendRoom(room);
+  }
+
   if (t === 'start') {
     if (room.host !== c.id || room.started) return;
     room.started = true;
@@ -151,7 +160,7 @@ function onMessage(c, msg) {
     // 출발 위치는 게임 쪽에서 seed 로 섞어 정함. 서버는 플레이어마다 순번만 정해 줌
     const order = {};
     let i = 0;
-    for (const p of room.players.values()) order[p.id] = i++;
+    for (const p of room.players.values()) { order[p.id] = i++; p.inRaid = true; }
     return broadcast(room, { t: 'start', seed: room.seed, order, room: roomInfo(room) });
   }
 

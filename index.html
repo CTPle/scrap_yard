@@ -285,6 +285,25 @@ body.dropping #dropHint{ display:flex; }
 .tmore{ gap:6px; padding:6px; }
 body:not(.is-raid) .raidonly{ display:none; }
 body.is-raid .waveonly{ display:none; }
+.modebar{ position:sticky; top:-24px; z-index:3; display:flex; gap:8px; margin:0 0 1em; padding:10px 0; background:rgb(14,17,22); }
+.modebar button{ flex:1; font:inherit; font-size:19px; font-weight:700; padding:12px 10px; border:2px solid rgba(241,233,216,.22); background:rgba(255,255,255,.04); color:var(--dim); cursor:pointer; text-align:center; }
+.modebar button small{ display:block; font-size:12px; font-weight:500; margin-top:4px; }
+.modebar button[aria-pressed="true"]{ border-color:var(--amber); color:var(--amber); background:rgba(240,165,48,.12); }
+.modebar button.coop[aria-pressed="true"]{ border-color:var(--red); color:#ff8a70; background:rgba(224,82,58,.14); }
+.roombox{ border:1px solid rgba(224,82,58,.45); background:rgba(224,82,58,.06); padding:12px; margin:0 0 1.2em; }
+.roombox[hidden]{ display:none; }
+.roombox .roomhead{ display:flex; flex-direction:column; gap:4px; margin:0 0 10px; }
+.roombox .roomhead b{ font-size:16px; }
+.roombox .opts{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.roombox input{ font:inherit; font-size:14px; padding:5px 8px; width:6.5em; text-transform:uppercase; background:rgba(0,0,0,.35); color:var(--ink); border:1px solid rgba(241,233,216,.35); }
+.roombox .code{ font-family:monospace; font-size:15px; letter-spacing:.12em; color:var(--amber); }
+.roomlist{ margin-top:10px; display:flex; flex-direction:column; gap:4px; }
+.roomrow{ display:grid; grid-template-columns:5em 1fr 4.5em auto; gap:8px; align-items:center; padding:5px 8px; background:rgba(0,0,0,.25); font-size:14px; }
+.roominfo{ font-size:14px; margin:0 0 8px; }
+.roomplayers{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
+.roomplayers span{ padding:3px 8px; background:rgba(0,0,0,.3); font-size:13px; }
+.roomplayers span.host{ color:var(--amber); }
+.roombox .err{ color:#ff7a6a; font-size:13px; margin:8px 0 0; }
 .nickrow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:-0.6em 0 1em; font-size:14px; color:var(--dim); }
 .nickrow b{ color:var(--ink); font-size:16px; }
 .nickrow input{ font:inherit; font-size:14px; padding:5px 8px; width:12em; background:rgba(0,0,0,.35); color:var(--ink); border:1px solid rgba(241,233,216,.35); }
@@ -455,12 +474,12 @@ body.is-raid .waveonly{ display:none; }
     <div class="card">
       <button type="button" class="backbtn" id="hideBack" title="처음 화면으로"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12.5 3.5 6 10l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>처음 화면</span></button>
       <h1>은신처</h1>
+      <div class="modebar" id="hModes"></div>
       <div class="credits">보유 크레딧 <b class="num" id="credTxt">0</b> <span id="stashVal"></span></div>
       <div id="hNick" class="nickrow"></div>
+      <div id="hRoom" class="roombox" hidden></div>
       <div class="picktitle">출격할 맵</div>
       <div class="opts" id="hMaps"></div>
-      <div class="picktitle">출격 모드</div>
-      <div class="opts" id="hModes"></div>
       <div class="picktitle">출격 장비 <span>권총은 항상 지급되며 잃지 않습니다</span></div>
       <div id="hLoad"></div>
       <div class="picktitle">출격 가방 <span>치료 키트, 수리키트, 수류탄, 카드키, 특수 탄창을 넣어 가져갑니다. 특수 탄창을 넣으면 주무기는 그 탄만 쓰고, 다 쓰면 탄약 상자를 찾을 때까지 권총만 쓸 수 있습니다</span></div>
@@ -4392,6 +4411,11 @@ function raidEnd(ok, why) {
     for (const G of E.g) { if (!G.gun) continue; STASH.guns.push(G.gun); if (G.scope !== 'none' && !G.freeScope) addStash('s_' + G.scope); if (G.laser) addStash(G.laser); }
     if (E.pScope === 'reddot') addStash('s_reddot'); if (E.pLaser) addStash(E.pLaser); if (E.pack) addStash(E.pack);
     r.bag.forEach((id, i) => { stashBagItem(r, id, i); row(ITEMS[id].name, ITEMS[id].value, '+'); });
+    // 협동전 보상: 가져온 물건 가치에 인원수에 따른 비율을 곱해 크레딧으로 추가 지급
+    if (r.coop) {
+      const n = r.coopN || 1, bonus = Math.round(r.bag.reduce((a, id) => a + ITEMS[id].value, 0) * coopBonus(n));
+      if (bonus > 0) { STASH.credits += bonus; row(`협동전 보상 (${n}명, +${coopPct(n)})`, bonus, '+'); }
+    }
     SND.play('clear');
   } else {
     SND.play('over');
@@ -4428,6 +4452,7 @@ function openHideout() {
   buildLevel(raidMap);
   $('startOv').hidden = true; $('raidOv').hidden = true; $('overOv').hidden = true; $('hideOv').hidden = false;
   state = 'title'; mode = 'raid';
+  if (NET.inRaid) { NET.inRaid = false; netSend({ t:'lobby' }); }
   renderHideout();
 }
 const SHOP_CATS = [
@@ -4464,7 +4489,7 @@ function renderNick() {
   if (!STASH.nick || nickEdit) {
     const note = !STASH.nick ? '처음 정한 뒤 한 번은 바로 바꿀 수 있고, 그 뒤로는 30일에 한 번 바꿀 수 있습니다' : (STASH.nickFree || 0) > 0 ? '이번 변경은 대기 없이 가능 (다음부터 30일에 한 번)' : '바꾸면 30일 동안 다시 바꿀 수 없습니다';
     el.innerHTML = `<span>닉네임</span><input id="nickIn" maxlength="12" placeholder="2~12자" value="${STASH.nick || ''}"><button class="opt" id="nickOk">확인</button>${STASH.nick ? '<button class="opt" id="nickNo">취소</button>' : ''}<span class="hint">${note}</span>${nickErr ? `<span class="err">${nickErr}</span>` : ''}`;
-    const go = () => { nickErr = setNick($('nickIn').value); if (!nickErr) nickEdit = false; renderNick(); };
+    const go = () => { nickErr = setNick($('nickIn').value); if (!nickErr) { nickEdit = false; if (NET.st === 'on') netSend({ t:'hello', nick:STASH.nick }); renderHideout(); } else renderNick(); };
     $('nickOk').onclick = go;
     $('nickIn').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') go(); };
     if ($('nickNo')) $('nickNo').onclick = () => { nickEdit = false; nickErr = ''; renderNick(); };
@@ -4474,15 +4499,108 @@ function renderNick() {
   el.innerHTML = `<span>닉네임</span><b>${STASH.nick}</b><button class="opt" id="nickEditBtn" ${w > 0 ? 'disabled' : ''}>변경</button><span class="hint">${w > 0 ? `${days}일 뒤 변경 가능` : (STASH.nickFree || 0) > 0 ? '1회 무료 변경 가능' : '변경 가능'}</span>`;
   $('nickEditBtn').onclick = () => { if (nickWait() > 0) return; nickEdit = true; nickErr = ''; renderNick(); };
 }
+// ---------- 협동전 방 (멀티플레이 서버) ----------
+const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
+// 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
+const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
+const coopBonus = n => COOP_BONUS[Math.max(1, Math.min(MAX_ROOM, n | 0))];
+const coopPct = n => Math.round(coopBonus(n) * 100) + '%';
+const NET = { ws:null, st:'off', id:0, room:null, list:[], err:'', retry:0, rt:0, closing:false, inRaid:false };
+const escH = v => String(v).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+function netSend(o) { if (NET.ws && NET.ws.readyState === 1) NET.ws.send(JSON.stringify(o)); }
+function netConnect() {
+  if (NET.ws || !STASH.nick) return;
+  clearTimeout(NET.rt);
+  NET.st = 'wait'; NET.err = '';
+  let ws;
+  try { ws = new WebSocket(NET_URL); } catch (_) { NET.st = 'off'; NET.err = '서버에 연결할 수 없습니다'; renderRoom(); return; }
+  NET.ws = ws;
+  ws.onopen = () => { NET.retry = 0; netSend({ t:'hello', nick:STASH.nick }); };
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (_) { return; } if (m && typeof m.t === 'string') netOn(m); };
+  ws.onclose = () => {
+    if (NET.ws !== ws) return;
+    NET.ws = null; NET.st = 'off'; NET.id = 0; NET.room = null; NET.list = [];
+    if (HL.coop && !NET.closing) {
+      // 끊기면 점점 간격을 늘려 다시 연결 (최대 15초)
+      NET.err = '서버 연결이 끊겼습니다. 잠시 뒤 다시 연결합니다';
+      NET.rt = setTimeout(() => { if (HL.coop && !NET.ws) netConnect(); }, Math.min(15000, 2000 * ++NET.retry));
+    }
+    NET.closing = false;
+    if (!$('hideOv').hidden) renderHideout();
+  };
+  renderRoom();
+}
+function netClose() { clearTimeout(NET.rt); if (!NET.ws) return; NET.closing = true; netSend({ t:'leave' }); NET.ws.close(); }
+function netOn(m) {
+  const vis = !$('hideOv').hidden;
+  if (m.t === 'welcome') { NET.id = m.id; NET.st = 'on'; NET.err = ''; netSend({ t:'list' }); }
+  else if (m.t === 'err') NET.err = String(m.m || '');
+  else if (m.t === 'list') NET.list = (m.rooms || []).filter(r => r && r.mode === 'coop' && /^[A-Z0-9]{4}$/.test(r.code));
+  else if (m.t === 'joined') NET.err = '';
+  else if (m.t === 'room') {
+    NET.room = m.room;
+    if (MAPS[m.room.map] && raidMap !== m.room.map && state !== 'play') { raidMap = m.room.map; if (vis) buildLevel(raidMap); }
+  }
+  else if (m.t === 'start') { NET.room = m.room; netStartRaid(); return; }
+  else return; // 위치, AI 적, 사건 정보는 다음 단계에서 연결
+  if (vis) renderHideout();
+}
+function netStartRaid() {
+  if (state === 'play' || $('hideOv').hidden) return;
+  const r = NET.room;
+  if (MAPS[r.map]) { raidMap = r.map; buildLevel(raidMap); }
+  HL.coop = true; NET.inRaid = true;
+  fixPack(); saveHL(); saveStash();
+  beginRaid();
+  if (raid && state === 'play') raid.coopN = r.players.length;
+  else { NET.inRaid = false; netSend({ t:'lobby' }); renderHideout(); }
+}
+// 방 목록은 방 밖에 있을 때만 5초마다 새로 받음
+setInterval(() => { if (NET.st === 'on' && !NET.room && HL.coop && !$('hideOv').hidden) netSend({ t:'list' }); }, 5000);
+function renderRoom() {
+  const el = $('hRoom');
+  el.hidden = !HL.coop;
+  if (!HL.coop) return;
+  let h = `<div class="roomhead"><b>협동전 방</b><span class="hint">방을 만들거나 목록에서 골라 입장합니다. 비밀방은 코드로만 입장합니다. 탈출에 성공하면 가져온 물건 가치의 ${coopPct(1)}(1명)~${coopPct(MAX_ROOM)}(${MAX_ROOM}명)를 크레딧으로 더 받고, 인원이 많을수록 늘어나는 폭이 커집니다. 쓰러지면 ${BLEED_T}초 안에 팀원이 살릴 수 있고, 팀킬이 됩니다.</span></div>`;
+  if (!STASH.nick) h += '<p class="hint">협동전 방을 쓰려면 위에서 닉네임을 먼저 정해 주십시오</p>';
+  else if (NET.st !== 'on') {
+    h += `<div class="opts"><span class="hint">${NET.ws ? '서버에 연결하는 중입니다. 서버가 잠들어 있었다면 1분쯤 걸립니다' : escH(NET.err || '서버에 연결되어 있지 않습니다')}</span>${NET.ws ? '' : '<button class="opt" id="netRe">다시 연결</button>'}</div>`;
+  } else if (NET.room) {
+    const r = NET.room, host = r.host === NET.id;
+    h += `<div class="roominfo">${r.priv ? '비밀방' : '공개방'} 코드 <span class="code">${escH(r.code)}</span> · ${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)} · ${r.players.length}/${MAX_ROOM}명 · 지금 인원 보상 +${coopPct(r.players.length)}</div>`
+      + `<div class="roomplayers">${r.players.map(p => `<span class="${p.id === r.host ? 'host' : ''}">${escH(p.nick)}${p.id === r.host ? ' (방장)' : ''}${p.id === NET.id ? ' (나)' : ''}</span>`).join('')}</div>`
+      + `<div class="opts"><button class="opt" id="roomLeave">방 나가기</button><span class="hint">${r.started ? '방원이 아직 출격 중입니다. 모두 돌아오면 다시 출격할 수 있습니다' : host ? '아래 출격 버튼을 누르면 방 전체가 함께 출격합니다' : '방장이 출격을 시작하면 함께 출격합니다'}</span></div>`;
+  } else {
+    h += `<div class="opts"><button class="opt" id="roomMake">방 만들기 (${MAPS[raidMap].name})</button><button class="opt" id="roomMakePriv">비밀방 만들기</button><button class="opt" id="roomRefresh">새로고침</button></div>`
+      + `<div class="opts" style="margin-top:6px"><input id="roomCode" maxlength="4" placeholder="방 코드"><button class="opt" id="roomJoinCode">비밀방 입장</button><span class="hint">비밀방은 목록에 보이지 않고, 방장에게 받은 코드로만 들어갈 수 있습니다</span></div>`
+      + `<div class="roomlist">${NET.list.length ? NET.list.map(r => `<div class="roomrow"><span class="code">${r.code}</span><span>${MAPS[r.map] ? MAPS[r.map].name : escH(r.map)}</span><span>${r.n | 0}/${r.max | 0}명</span><button class="opt" data-joinroom="${r.code}" ${r.n >= r.max ? 'disabled' : ''}>입장</button></div>`).join('') : '<p class="hint">열려 있는 협동전 방이 없습니다. 방을 만들어 보십시오</p>'}</div>`;
+  }
+  if (NET.err && NET.st === 'on') h += `<p class="err">${escH(NET.err)}</p>`;
+  el.innerHTML = h;
+  const b = id => document.getElementById(id);
+  if (b('netRe')) b('netRe').onclick = () => { NET.retry = 0; netConnect(); };
+  if (b('roomLeave')) b('roomLeave').onclick = () => { netSend({ t:'leave' }); NET.room = null; NET.err = ''; netSend({ t:'list' }); renderHideout(); };
+  if (b('roomMake')) b('roomMake').onclick = () => { NET.err = ''; netSend({ t:'create', map:raidMap, mode:'coop' }); };
+  if (b('roomMakePriv')) b('roomMakePriv').onclick = () => { NET.err = ''; netSend({ t:'create', map:raidMap, mode:'coop', priv:true }); };
+  if (b('roomRefresh')) b('roomRefresh').onclick = () => netSend({ t:'list' });
+  const joinCode = () => { const c = b('roomCode').value.trim().toUpperCase(); if (!/^[A-Z0-9]{4}$/.test(c)) { NET.err = '방 코드는 4글자입니다'; renderRoom(); return; } NET.err = ''; netSend({ t:'join', code:c }); };
+  if (b('roomJoinCode')) b('roomJoinCode').onclick = joinCode;
+  if (b('roomCode')) b('roomCode').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') joinCode(); };
+  el.querySelectorAll('[data-joinroom]').forEach(x => x.onclick = () => { NET.err = ''; netSend({ t:'join', code:x.dataset.joinroom }); });
+}
 function renderHideout() {
   renderNick();
   const it = STASH.items, has = id => (it[id] || 0) > 0;
   $('credTxt').textContent = STASH.credits.toLocaleString();
   const total = Object.entries(it).reduce((a, [id, n]) => a + (ITEMS[id] ? ITEMS[id].value * n : 0), 0) + STASH.guns.reduce((a, g) => a + gunValue(g), 0) + STASH.keys.reduce((a, u) => a + keyValue(u), 0);
   $('stashVal').textContent = `(창고 가치 ${total.toLocaleString()})`;
-  $('hModes').innerHTML = [[false, '일반 모드'], [true, '협동전 모드']].map(([v, n]) => `<button class="opt" data-coop="${v ? 1 : 0}" aria-pressed="${!!HL.coop === v}">${n}</button>`).join('')
-    + `<span class="hint">${HL.coop ? `적 체력 ${COOP_HP}배, 공격력 ${COOP_DMG}배. 쓰러지면 ${BLEED_T}초 안에 팀원이 살릴 수 있음. 팀킬 가능` : '기본 난이도'}</span>`;
-  $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}">${MAPS[k].name}</button>`).join('');
+  $('hModes').innerHTML = `<button data-coop="0" aria-pressed="${!HL.coop}">일반 모드<small>혼자 출격, 기본 난이도</small></button>`
+    + `<button class="coop" data-coop="1" aria-pressed="${!!HL.coop}">협동전 모드<small>적 체력, 공격력 ${COOP_HP}배 / 보상 +${coopPct(1)}~${coopPct(MAX_ROOM)}</small></button>`;
+  const roomLock = HL.coop && NET.room;
+  $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name}</button>`).join('')
+    + (roomLock ? '<span class="hint">방에 들어가 있는 동안에는 방의 맵으로 고정됩니다</span>' : '');
+  renderRoom();
+  if (HL.coop && STASH.nick && !NET.ws && !NET.retry) netConnect();
   const gun = STASH.guns.find(g => g.uid === HL.gun) || null; if (!gun) HL.gun = null;
   const mainW = gun ? ITEMS[gun.id].wi : null;
   const btn = (attr, val, label, on, dis) => `<button class="opt" ${attr}="${val}" aria-pressed="${on}" ${dis ? 'disabled' : ''}>${label}</button>`;
@@ -4584,7 +4702,7 @@ function renderHideout() {
   on('[data-stashcat]', b => { stashCat = b.dataset.stashcat; });
   on('[data-sellvals]', () => { for (const id of Object.keys(STASH.items)) if (ITEMS[id] && ITEMS[id].kind === 'val') { STASH.credits += sellPrice(id) * STASH.items[id]; delete STASH.items[id]; } saveStash(); SND.play('clear'); });
   on('[data-shopback]', () => { shopCat = null; });
-  on('[data-coop]', b => { HL.coop = b.dataset.coop === '1'; });
+  on('[data-coop]', b => { const v = b.dataset.coop === '1'; if (HL.coop && !v) netClose(); HL.coop = v; NET.retry = 0; });
   on('[data-map]', b => { if (!RAID_MAPS.includes(b.dataset.map)) return; raidMap = b.dataset.map; buildLevel(raidMap); idle = 0; try { localStorage.setItem('scrapyard-rmap', raidMap); } catch (_) {} });
   on('[data-gun]', b => { HL.gun = b.dataset.gun ? +b.dataset.gun : null; });
   on('[data-gun2]', b => { HL.gun2 = b.dataset.gun2 ? +b.dataset.gun2 : null; });
@@ -4624,8 +4742,15 @@ function gunSell(g) { return Math.round(ITEMS[g.id].value * 0.6 + upgSpent(g) * 
 function sellPrice(id) { return Math.round(ITEMS[id].value * (ITEMS[id].kind === 'val' ? 1 : 0.6)); }
 function saveHL() { try { localStorage.setItem('scrapyard-hl', JSON.stringify(HL)); } catch (_) {} scheduleAutoSave(); }
 $('hideBtn').addEventListener('click', () => { SND.init(); openHideout(); });
-$('hideBack').addEventListener('click', () => { buildLevel(mapChoice); $('hideOv').hidden = true; $('startOv').hidden = false; mode = 'wave'; shopCat = null; });
+$('hideBack').addEventListener('click', () => { if (NET.room) netSend({ t:'leave' }); buildLevel(mapChoice); $('hideOv').hidden = true; $('startOv').hidden = false; mode = 'wave'; shopCat = null; });
 $('deployBtn').addEventListener('click', () => {
+  if (HL.coop) {
+    // 협동전: 방장이 누르면 방 전체가 출격 (서버가 시작 신호를 보냄)
+    if (!NET.room) { $('deployMsg').textContent = '협동전은 방을 만들거나 입장한 뒤 출격할 수 있습니다'; return; }
+    if (NET.room.host !== NET.id) { $('deployMsg').textContent = '방장만 출격을 시작할 수 있습니다'; return; }
+    if (STASH.credits < deployCost()) { $('deployMsg').textContent = `출격 비용 ${deployCost().toLocaleString()} 크레딧이 부족합니다`; return; }
+    netSend({ t:'start' }); return;
+  }
   fixPack(); saveHL(); saveStash();
   beginRaid();
 });
