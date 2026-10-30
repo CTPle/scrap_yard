@@ -18,7 +18,7 @@ const MAX_ROOMS = 30;           // 서버 전체 최대 방 개수
 const TICK = 1000 / 15;         // 위치 전송 간격 (1초에 15번)
 const FAR = 150;                // 이 거리(m)보다 멀면 3번에 1번만 보냄
 const MAX_MSG = 16 * 1024;      // 메시지 하나 최대 크기 (AI 적 정보 포함)
-const RATE = 80;                // 1초에 받을 수 있는 최대 메시지 수
+const RATE = 120;               // 1초에 받을 수 있는 최대 메시지 수
 const MAPS = ['lab', 'canyon'];
 const MODES = ['normal', 'coop', 'team'];
 const NICK_RE = /^[가-힣A-Za-z0-9_]{2,12}$/;
@@ -77,6 +77,13 @@ function autoTeam(room) {
   return a <= b ? 1 : 2;
 }
 
+// AI 적 계산 담당이 출격에서 빠지면 아직 출격 중인 다른 사람에게 넘김
+function passAI(room, c) {
+  if (room.ai !== c.id) return;
+  const next = [...room.players.values()].find(p => p !== c && p.inRaid);
+  room.ai = next ? next.id : 0;
+  if (next) broadcast(room, { t: 'aihost', id: room.ai });
+}
 function leaveRoom(c) {
   const room = c.room;
   if (!room) return;
@@ -85,6 +92,7 @@ function leaveRoom(c) {
   if (!room.players.size) { rooms.delete(room.code); return; }
   // 방장이 나가면 다음 사람이 방장 (AI 적 계산도 넘겨받음)
   if (room.host === c.id) room.host = room.players.keys().next().value;
+  passAI(room, c);
   if (room.started && ![...room.players.values()].some(p => p.inRaid)) room.started = false;
   broadcast(room, { t: 'left', id: c.id, host: room.host });
   sendRoom(room);
@@ -149,6 +157,7 @@ function onMessage(c, msg) {
   // 출격이 끝나 은신처로 돌아옴. 모두 돌아오면 방이 다시 대기 상태가 됨
   if (t === 'lobby') {
     c.inRaid = false; c.state = null; c.down = false;
+    passAI(room, c);
     if (room.started && ![...room.players.values()].some(p => p.inRaid)) room.started = false;
     return sendRoom(room);
   }
@@ -161,7 +170,8 @@ function onMessage(c, msg) {
     const order = {};
     let i = 0;
     for (const p of room.players.values()) { order[p.id] = i++; p.inRaid = true; }
-    return broadcast(room, { t: 'start', seed: room.seed, order, room: roomInfo(room) });
+    room.ai = room.host; // AI 적 계산은 처음엔 방장이 맡음
+    return broadcast(room, { t: 'start', seed: room.seed, order, ai: room.ai, room: roomInfo(room) });
   }
 
   if (!room.started) return;
@@ -174,9 +184,9 @@ function onMessage(c, msg) {
     return;
   }
 
-  // AI 적 정보: 방장만 보낼 수 있고, 서버는 그대로 전달
+  // AI 적 정보: AI 담당만 보낼 수 있고, 서버는 그대로 전달
   if (t === 'ai') {
-    if (room.host !== c.id || !Array.isArray(msg.d)) return;
+    if (room.ai !== c.id || !msg.d || typeof msg.d !== 'object') return;
     return broadcast(room, { t: 'ai', d: msg.d }, c);
   }
 
@@ -191,11 +201,12 @@ function onMessage(c, msg) {
       return send(target, { t: 'e', k: 'hit', from: c.id, dmg, head: !!msg.head });
     }
     if (k === 'ehit') {
-      // AI 적에게 준 피해. 방장에게만 보냄
-      const host = room.players.get(room.host);
-      const dmg = Number(msg.dmg);
-      if (!host || host === c || !(dmg > 0) || dmg > MAX_DMG) return;
-      return send(host, { t: 'e', k: 'ehit', from: c.id, i: msg.i | 0, dmg, head: !!msg.head });
+      // AI 적에게 준 피해 묶음 [[적 번호, 피해], ...]. AI 담당에게만 보냄
+      const ai = room.players.get(room.ai);
+      if (!ai || ai === c || !Array.isArray(msg.h) || msg.h.length > 60) return;
+      const h = msg.h.filter(a => Array.isArray(a) && Number.isFinite(a[0]) && Number(a[1]) > 0 && Number(a[1]) <= 20000).map(a => [a[0] | 0, Number(a[1])]);
+      if (h.length) send(ai, { t: 'e', k: 'ehit', from: c.id, h });
+      return;
     }
     if (k === 'revive') {
       const target = room.players.get(msg.to);
@@ -205,7 +216,7 @@ function onMessage(c, msg) {
     }
     if (k === 'down') c.down = true;
     if (k === 'up') c.down = false;
-    if (k === 'dead' || k === 'extract') { c.down = false; c.inRaid = false; c.state = null; }
+    if (k === 'dead' || k === 'extract') { c.down = false; c.inRaid = false; c.state = null; passAI(room, c); }
     // 그 밖의 사건(사격, 쓰러짐, 사망, 탈출, 아이템 줍기, 폭발 등)은 다른 사람에게 그대로 전달
     const ALLOWED = ['shot', 'down', 'up', 'dead', 'extract', 'loot', 'boom', 'door', 'say'];
     if (!ALLOWED.includes(k)) return;

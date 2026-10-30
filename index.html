@@ -2629,6 +2629,9 @@ function buildDrone(e) {
   part(g, BOX, dark, [0.06, 0.25, 0.06], [0, 0.2, 0]);
   e.mats = [body]; return g;
 }
+// 적 번호(협동전에서 같은 적을 가리키는 데 씀)와 협동전 AI 계산용 임시 값
+let nidSeq = 1, aimMate = null;
+const _realPos = new THREE.Vector3(), _realEye = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
 function spawnEnemy(type) {
   const far = SPAWNS.filter(s => Math.hypot(s[0] - P.pos.x, s[1] - P.pos.z) > 16);
   const sp = (far.length ? far : SPAWNS)[Math.floor(Math.random() * (far.length || SPAWNS.length))];
@@ -2645,7 +2648,7 @@ function spawnEnemyAt(type, x, z, alert, y = 0) {
   if (type === 'bguard') { e.name = '보스가드'; }
   if (type === 'jugg') { e.name = '파쇄기'; e.mgT = 2; e.mg = 0; e.misT = 4; e.dashCd = 4; e.dash = 0; e.windup = 0; }
   if (type === 'boss') { e.name = '경비대장'; e.mgT = 2.5; e.mg = 0; e.nadeT = 5; }
-  e.g.userData.enemy = e;
+  e.g.userData.enemy = e; e.nid = nidSeq++;
   e.fy = y; // 서 있는 바닥 높이 (드론은 아래 바닥 높이)
   e.g.position.set(x, type === 'drone' ? y + (M.droneH || 4.6) : y, z); e.vy = 0;
   e.alert = alert; e.g.rotation.y = rand(0, 6.28); e.look = e.g.rotation.y;
@@ -2658,6 +2661,7 @@ function spawnEnemyAt(type, x, z, alert, y = 0) {
   return e;
 }
 function damageEnemy(e, d, dir) {
+  if (netPuppet()) { e.flashT = 0.08; if (e.pup) NET.hq.set(e.nid, (NET.hq.get(e.nid) || 0) + d); return false; }
   alertAround(e.g.position, 14, e.fy); e.alert = true;
   if (e.type === 'drone') d = e.hp + 1; // 드론은 어디에 맞아도 한 발에 격추
   e.hp -= d; e.flashT = 0.08;
@@ -2674,6 +2678,7 @@ function bossAmmoDrop(e) {
 }
 function killEnemy(e) {
   if (e.aimLine) { scene.remove(e.aimLine); e.aimLine = null; }
+  if (netIsAI() && e.nid) NET.deadQ.push(e.nid);
   const nBox = lootBoxes.length;
   for (const b of lootBoxes) if (b.locked && b.owners && b.owners.includes(e)) {
     b.owners = b.owners.filter(x => x !== e);
@@ -2724,7 +2729,7 @@ function juggMissiles(e) {
     const m = new THREE.Mesh(BOX, glow('#ff8a3a')); m.scale.set(0.15, 0.15, 0.5); m.position.copy(from); scene.add(m);
     const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3, 28), new THREE.MeshBasicMaterial({ color:'#ff8a3a', transparent:true, opacity:0.6, side:THREE.DoubleSide, depthWrite:false }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(target.x, target.y + 0.05, target.z); scene.add(ring);
-    eNades.push({ m, v, t:T, ring, target, r:3.2, dmg:38 * enemyDmgMul(e), missile:true });
+    eNades.push({ m, v, t:T, ring, target, r:3.2, dmg:38 * enemyDmgMul(e), missile:true }); netNade(eNades[eNades.length - 1], from);
   }
 }
 function bossNade(e) {
@@ -2735,7 +2740,7 @@ function bossNade(e) {
   const m = new THREE.Mesh(SPH, std('#3a3d42', { metalness:0.6 })); m.scale.setScalar(0.18); m.position.copy(from); scene.add(m);
   const ring = new THREE.Mesh(new THREE.RingGeometry(3.6, 4, 32), new THREE.MeshBasicMaterial({ color:'#ff3a2e', transparent:true, opacity:0.6, side:THREE.DoubleSide, depthWrite:false }));
   ring.rotation.x = -Math.PI / 2; ring.position.set(target.x, target.y + 0.05, target.z); scene.add(ring);
-  eNades.push({ m, v, t:T, ring, target, dmg:65 * enemyDmgMul(e) });
+  eNades.push({ m, v, t:T, ring, target, dmg:65 * enemyDmgMul(e) }); netNade(eNades[eNades.length - 1], from);
   SND.play('launcher');
 }
 function updateENades(dt) {
@@ -2771,7 +2776,8 @@ function enemyShoot(e, from, speed, dmg, col, spread = 0.03) {
   dir.x += rand(-spread, spread); dir.y += rand(-spread * 0.6, spread * 0.6); dir.z += rand(-spread, spread); dir.normalize();
   const m = new THREE.Mesh(BOX, glow(col)); m.scale.set(0.07, 0.07, 0.9); m.position.copy(from); m.lookAt(from.clone().add(dir));
   scene.add(m); shots.push({ m, v:dir.multiplyScalar(speed * AI.shotMul), dmg:dmg * enemyDmgMul(e), t:AI.life });
-  const dist = from.distanceTo(P.pos); SND.play('eshot', clamp(1.4 - dist / 30, 0.2, 1));
+  if (netIsAI()) { const v = dir; NET.esQ.push([r2(from.x), r2(from.y), r2(from.z), r2(v.x), r2(v.y), r2(v.z), r2(dmg * enemyDmgMul(e)), col]); }
+  const dist = from.distanceTo(aimMate ? _realPos : P.pos); SND.play('eshot', clamp(1.4 - dist / 30, 0.2, 1));
 }
 function navPoint(e) {
   const pf = P.pos.y - 1.7, p = e.g.position;
@@ -2798,10 +2804,20 @@ function alertAround(pos, r, fy = pos.y) {
 }
 function seeMul() { return (laserActive() || lightActive() ? 1 : 0.7) * (1 - crouchT * 0.25); }
 function updateEnemies(dt) {
+  // 협동전에서 AI 담당이 아닌 사람: 적을 직접 움직이지 않고 담당자가 보낸 위치를 따라 그림
+  if (netPuppet()) { updatePuppets(dt); return; }
   if (NAV) updateNav(dt);
   const eye = EYE;
   for (const e of enemies) {
     if (e.dead) continue;
+    // 협동전: 가장 가까운 플레이어(나 또는 팀원)를 노림. 팀원을 노릴 때는 잠시 팀원 위치를 기준으로 계산
+    const mt = pickTarget(e, dt);
+    if (mt) { _realPos.copy(P.pos); _realEye.copy(EYE); P.pos.set(mt.tx, mt.ty + 1.7, mt.tz); EYE.set(mt.tx, mt.ty + (mt.flags & 1 ? 1.15 : 1.7), mt.tz); aimMate = mt; }
+    try { updateEnemy(e, dt, eye); } finally { if (mt) { P.pos.copy(_realPos); EYE.copy(_realEye); aimMate = null; } }
+  }
+  enemies = enemies.filter(e => !e.dead);
+}
+function updateEnemy(e, dt, eye) {
     e.t += dt;
     const g = e.g, T = ETYPES[e.type];
     if (!e.alert) {
@@ -2851,7 +2867,7 @@ function updateEnemies(dt) {
           if (e.type === 'boss' || e.type === 'jugg') say(`${e.name}이(가) 당신을 발견했습니다`);
         }
       }
-      continue;
+      return;
     }
     if (g.scale.x < 1) g.scale.setScalar(Math.min(1, g.scale.x + dt * 4));
     const dx = P.pos.x - g.position.x, dz = P.pos.z - g.position.z, dist = Math.hypot(dx, dz) || 0.001;
@@ -2877,7 +2893,7 @@ function updateEnemies(dt) {
       if (e.losT <= 0) {
         e.seen = dist < AI.see * seeMul() && losTo(from0, eye); e.losT = 0.3; e.noLos = e.seen ? 0 : e.noLos + 0.3;
         if (e.seen) e.hunter = false;
-        if (mode === 'raid' && e.anchor && !e.relentless && !e.seen && e.noLos > 18 && dist > 25) { e.alert = false; e.pt = { x:e.anchor.x, z:e.anchor.z }; e.ptT = 30; e.noLos = 0; continue; }
+        if (mode === 'raid' && e.anchor && !e.relentless && !e.seen && e.noLos > 18 && dist > 25) { e.alert = false; e.pt = { x:e.anchor.x, z:e.anchor.z }; e.ptT = 30; e.noLos = 0; return; }
       }
       const far = e.type === 'snp' ? 120 : e.type === 'bguard' ? 14 : e.type === 'jugg' ? AI.bFar + 6 : e.type === 'boss' ? AI.bFar + 4 : e.type === 'brute' ? AI.bFar : AI.gFar, near = e.type === 'snp' ? 0 : e.type === 'bguard' ? 4 : e.type === 'jugg' ? 4 : e.type === 'boss' ? AI.bNear + 2 : e.type === 'brute' ? AI.bNear : AI.gNear;
       const approach = dist > far || (!e.seen && e.noLos > 1.2);
@@ -3030,8 +3046,6 @@ function updateEnemies(dt) {
     if (e.flashT > 0) e.flashT -= dt;
     const fv = e.flashT > 0 ? 0.7 : 0;
     for (const m of e.mats) m.emissive.setRGB(fv, fv, fv);
-  }
-  enemies = enemies.filter(e => !e.dead);
 }
 
 // ---------- 플레이어 ----------
@@ -3060,6 +3074,7 @@ function updateDown(dt) {
   if (P.bleedT <= 0) downDeath('쓰러진 뒤 출혈로 사망했습니다');
 }
 function hurtPlayer(d) {
+  if (aimMate) { hitMate(aimMate, d / PVP_MUL, false); return; } // 적이 팀원을 노리다 준 근접 피해는 팀원에게
   if (state !== 'play' && state !== 'inv') return;
   d *= P.defMul || 1;
   if (P.downed) {
@@ -4365,7 +4380,7 @@ function updateRaid(dt) {
   const ml = STASH.fac.med;
   if (ml >= 1 && P.calm > [0, 6, 5, 3][ml] && P.hp < P.maxHp) P.hp = Math.min(P.maxHp, P.hp + [0, 0.6, 1.2, 2.4][ml] * dt);
   if (el >= raid.nextReinf) {
-    raid.rwave++; spawnReinf(raid.rwave);
+    raid.rwave++; if (!netPuppet()) spawnReinf(raid.rwave);
     // 4분마다 계속 투입. 남은 시간 안에 다음 투입이 없으면 끝
     raid.nextReinf += REINF_GAP; if (raid.nextReinf >= raid.cfg.time) raid.nextReinf = Infinity; raid.warned = false;
   }
@@ -4520,7 +4535,7 @@ const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 12;
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
 const coopBonus = n => COOP_BONUS[Math.max(1, Math.min(MAX_ROOM, n | 0))];
 const coopPct = n => Math.round(coopBonus(n) * 100) + '%';
-const NET = { ws:null, st:'off', id:0, room:null, list:[], err:'', retry:0, rt:0, closing:false, inRaid:false, seed:0, order:-1 };
+const NET = { ws:null, st:'off', id:0, room:null, list:[], err:'', retry:0, rt:0, closing:false, inRaid:false, seed:0, order:-1, ai:0, matched:false, hq:new Map(), deadQ:[], esQ:[], enQ:[] };
 const escH = v => String(v).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
 function netSend(o) { if (NET.ws && NET.ws.readyState === 1) NET.ws.send(JSON.stringify(o)); }
 function netConnect() {
@@ -4556,9 +4571,11 @@ function netOn(m) {
     NET.room = m.room;
     if (MAPS[m.room.map] && raidMap !== m.room.map && state !== 'play') { raidMap = m.room.map; if (vis) buildLevel(raidMap); }
   }
-  else if (m.t === 'start') { NET.room = m.room; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; netStartRaid(); return; }
+  else if (m.t === 'start') { NET.room = m.room; NET.ai = m.ai | 0; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; netStartRaid(); return; }
   else if (m.t === 'S') { if (NET.inRaid && Array.isArray(m.p)) for (const a of m.p) mateState(a); return; }
   else if (m.t === 'e') { netEvent(m); return; }
+  else if (m.t === 'ai') { netAI(m.d); return; }
+  else if (m.t === 'aihost') { netTakeAI(m.id | 0); return; }
   else if (m.t === 'left') { dropMate(m.id); if (NET.room) NET.room.host = m.host; return; }
   else return;
   if (vis) renderHideout();
@@ -4596,7 +4613,7 @@ function makeMate(id) {
   return mt;
 }
 function mateState(a) {
-  if (!Array.isArray(a) || a.length < 7) return;
+  if (!raid || !Array.isArray(a) || a.length < 7) return;
   const id = a[0] | 0; if (id === NET.id) return;
   const mt = MATES.get(id) || makeMate(id);
   mt.tx = +a[1]; mt.ty = +a[2] - 1.7; mt.tz = +a[3]; mt.yaw = +a[4]; mt.pitch = +a[5]; mt.flags = a[6] | 0; mt.down = !!(mt.flags & 2);
@@ -4614,7 +4631,140 @@ function nearDownedMate() {
   for (const mt of MATES.values()) if (mt.g.visible && mt.down && Math.hypot(mt.g.position.x - P.pos.x, mt.g.position.z - P.pos.z) < 2.2 && Math.abs(mt.g.position.y - (P.pos.y - 1.7)) < 1.2) return mt;
   return null;
 }
-let netSendT = 0, reviveT = 0, reviveWho = null;
+let netSendT = 0, reviveT = 0, reviveWho = null, hitSendT = 0, aiSendT = 0, aiFullT = 0;
+// ---------- 함께 쓰는 AI 적 ----------
+// 방장(AI 담당)만 적을 계산하고, 1초에 10번 적 위치와 적 총알, 유탄을 다른 사람에게 보냄
+// 다른 사람은 받은 대로 그리기만 하고, 맞힌 피해는 담당자에게 보냄. 전리품은 각자 따로 나옴
+const ETYPE_LIST = Object.keys(ETYPES);
+const r2 = v => Math.round(v * 100) / 100;
+function netIsAI() { return NET.inRaid && NET.ai === NET.id; }
+function netPuppet() { return NET.inRaid && NET.ai !== NET.id; }
+function pickTarget(e, dt) {
+  if (!NET.inRaid || !MATES.size) return null;
+  e.tgtT = (e.tgtT || 0) - dt;
+  if (e.tgtT > 0 && (e.tgt === null || (e.tgt && MATES.get(e.tgt.id) === e.tgt && e.tgt.g.visible && !e.tgt.down))) return e.tgt;
+  e.tgtT = 1;
+  const gp = e.g.position, dist = (x, y, z) => Math.hypot(x - gp.x, z - gp.z) + Math.abs(y - gp.y) * 3;
+  let best = null, bd = P.downed ? Infinity : dist(P.pos.x, P.pos.y - 1.7, P.pos.z) * (e.tgt === null ? 0.8 : 1);
+  for (const mt of MATES.values()) {
+    if (!mt.g.visible || mt.down) continue;
+    const d = dist(mt.tx, mt.ty, mt.tz) * (e.tgt === mt ? 0.8 : 1);
+    if (d < bd) { bd = d; best = mt; }
+  }
+  e.tgt = best;
+  return best;
+}
+function netNade(n, from) {
+  if (!netIsAI()) return;
+  NET.enQ.push([r2(from.x), r2(from.y), r2(from.z), r2(n.v.x), r2(n.v.y), r2(n.v.z), r2(n.t), r2(n.target.x), r2(n.target.y), r2(n.target.z), n.r || 0, r2(n.dmg), n.missile ? 1 : 0]);
+}
+function sendAI(dt) {
+  aiSendT -= dt; aiFullT -= dt;
+  if (aiSendT > 0) return;
+  aiSendT = 0.1;
+  const full = aiFullT <= 0; if (full) aiFullT = 2;
+  const list = [];
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const g = e.g, st = (e.alert ? 1 : 0) | (e.aiming ? 2 : 0) | (e.windup > 0 || e.dash > 0 ? 4 : 0) | (e.mg > 0 ? 8 : 0);
+    const row = [e.nid, ETYPE_LIST.indexOf(e.type), r2(g.position.x), r2(g.position.y), r2(g.position.z), r2(g.rotation.y), Math.round(e.hp), Math.round(e.maxHp), st];
+    const L = e._ns;
+    if (full || !L || Math.abs(L[2] - row[2]) > 0.04 || Math.abs(L[3] - row[3]) > 0.04 || Math.abs(L[4] - row[4]) > 0.04 || Math.abs(L[5] - row[5]) > 0.05 || L[6] !== row[6] || L[8] !== row[8]) { list.push(row); e._ns = row; }
+  }
+  const d = { f:full ? 1 : 0, e:list };
+  if (NET.deadQ.length) d.x = NET.deadQ.splice(0);
+  if (NET.esQ.length) d.s = NET.esQ.splice(0, 120);
+  if (NET.enQ.length) d.n = NET.enQ.splice(0);
+  if (full || list.length || d.x || d.s || d.n) netSend({ t:'ai', d });
+}
+function dropEnemyQuiet(e) {
+  if (e.dead) return;
+  e.dead = true; scene.remove(e.g); if (e.aimLine) { scene.remove(e.aimLine); e.aimLine = null; }
+  for (const b of lootBoxes) if (b.locked && b.owners && b.owners.includes(e)) { b.owners = b.owners.filter(x => x !== e); if (!b.owners.length) { b.locked = false; b.lamp.material.color.set('#4dff7a'); } }
+}
+function netAI(d) {
+  if (!NET.inRaid || netIsAI() || !d || typeof d !== 'object' || state === 'over') return;
+  const seen = new Set();
+  if (Array.isArray(d.e)) for (const r of d.e) {
+    if (!Array.isArray(r) || r.length < 9) continue;
+    const nid = r[0] | 0, type = ETYPE_LIST[r[1] | 0]; if (!type) continue;
+    seen.add(nid);
+    let e = enemies.find(o => o.pup && o.nid === nid && !o.dead);
+    if (!e && !NET.matched) {
+      // 처음에는 내 화면에 미리 만들어진 같은 종류의 적(보스 등 고정 위치)과 짝지음
+      let bd = 4;
+      for (const o of enemies) if (!o.pup && !o.dead && o.type === type) { const dd = Math.hypot(o.g.position.x - r[2], o.g.position.z - r[4]); if (dd < bd) { bd = dd; e = o; } }
+      if (e) e.g.position.set(r[2], r[3], r[4]);
+    }
+    if (!e) { e = spawnEnemyAt(type, r[2], r[4], false, type === 'drone' ? r[3] - (M.droneH || 4.6) : r[3]); e.g.position.y = r[3]; }
+    e.pup = true; e.nid = nid;
+    e.tx = r[2]; e.ty = r[3]; e.tz = r[4]; e.tr = r[5]; e.hp = r[6]; e.maxHp = r[7]; e.st = r[8] | 0; e.alert = !!(e.st & 1);
+  }
+  if (d.f) {
+    // 전체 목록: 담당자에게 없는 적은 정리
+    if (!NET.matched) NET.matched = true;
+    for (const e of enemies) if (!e.dead && (!e.pup || !seen.has(e.nid))) dropEnemyQuiet(e);
+  }
+  if (Array.isArray(d.x)) for (const id of d.x) { const e = enemies.find(o => o.pup && o.nid === (id | 0) && !o.dead); if (e) killEnemy(e); }
+  if (Array.isArray(d.s)) for (const a of d.s) {
+    if (!Array.isArray(a) || a.length < 8) continue;
+    const from = new THREE.Vector3(+a[0], +a[1], +a[2]), v = new THREE.Vector3(+a[3], +a[4], +a[5]);
+    const col = typeof a[7] === 'string' && /^#[0-9a-f]{3,6}$/i.test(a[7]) ? a[7] : '#ff8a5c';
+    const m = new THREE.Mesh(BOX, glow(col)); m.scale.set(0.07, 0.07, 0.9); m.position.copy(from); m.lookAt(from.clone().add(v));
+    scene.add(m); shots.push({ m, v, dmg:Math.min(400, Math.max(0, +a[6] || 0)), t:AI.life });
+    SND.play('eshot', clamp(1.4 - from.distanceTo(P.pos) / 30, 0.2, 1));
+  }
+  if (Array.isArray(d.n)) for (const a of d.n) {
+    if (!Array.isArray(a) || a.length < 13) continue;
+    const missile = !!a[12], target = new THREE.Vector3(+a[7], +a[8], +a[9]);
+    const m = missile ? new THREE.Mesh(BOX, glow('#ff8a3a')) : new THREE.Mesh(SPH, std('#3a3d42', { metalness:0.6 }));
+    if (missile) m.scale.set(0.15, 0.15, 0.5); else m.scale.setScalar(0.18);
+    m.position.set(+a[0], +a[1], +a[2]); scene.add(m);
+    const R = +a[10] || 4.2;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(R - 0.4, R, 28), new THREE.MeshBasicMaterial({ color:missile ? '#ff8a3a' : '#ff3a2e', transparent:true, opacity:0.6, side:THREE.DoubleSide, depthWrite:false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(target.x, target.y + 0.05, target.z); scene.add(ring);
+    eNades.push({ m, v:new THREE.Vector3(+a[3], +a[4], +a[5]), t:+a[6], ring, target, r:+a[10] || undefined, dmg:Math.min(400, +a[11] || 0), missile });
+    SND.play('launcher');
+  }
+  enemies = enemies.filter(e => !e.dead);
+}
+function updatePuppets(dt) {
+  const k = 1 - Math.exp(-12 * dt);
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const g = e.g;
+    if (g.scale.x < 1) g.scale.setScalar(Math.min(1, g.scale.x + dt * 4));
+    if (e.pup) {
+      const ox = g.position.x, oz = g.position.z;
+      g.position.x += (e.tx - ox) * k; g.position.y += (e.ty - g.position.y) * k; g.position.z += (e.tz - oz) * k;
+      let dr = e.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * k;
+      e.fy = e.type === 'drone' ? e.ty - (M.droneH || 4.6) : g.position.y;
+      e.t += dt;
+      const moving = Math.hypot(g.position.x - ox, g.position.z - oz) > dt * 0.3;
+      if (e.legs) { const wk = moving ? Math.sin(e.t * 7) * 0.5 : 0; e.legs[0].rotation.x = wk; e.legs[1].rotation.x = -wk; }
+      if (e.legs2) { const wk = moving ? Math.sin(e.t * 5) * 0.5 : 0; e.legs2[0].rotation.x = -wk; e.legs2[1].rotation.x = wk; }
+      if (e.arms) e.arms.forEach(a => a.rotation.x = e.alert ? -1.35 : -0.3);
+      if (e.rotors) e.rotors[0].rotation.y += dt * 30;
+      if (e.minigun && e.st & 8) e.minigun.rotation.z += dt * 30;
+    }
+    if (e.flashT > 0) e.flashT -= dt;
+    const fv = e.flashT > 0 ? 0.7 : 0;
+    for (const m of e.mats) m.emissive.setRGB(fv, fv, fv);
+  }
+}
+// AI 담당자가 바뀜 (담당자가 탈출, 사망하거나 나감): 새 담당자는 받아 그리던 적을 이어서 직접 계산
+function netTakeAI(id) {
+  NET.ai = id;
+  if (!netIsAI()) return;
+  let mx = 0;
+  for (const e of enemies) {
+    if (e.dead) continue;
+    if (e.pup) { e.pup = false; e.g.position.set(e.tx, e.ty, e.tz); e.cd = rand(0.6, 1.4); e.last.copy(e.g.position); if (e.alert && !e.anchor) e.anchor = e.g.position.clone(); }
+    mx = Math.max(mx, e.nid || 0);
+  }
+  nidSeq = mx + 1; aiFullT = 0;
+  say('적 계산을 이어받았습니다', 1);
+}
 function updateNet(dt) {
   if (!NET.inRaid) return;
   // 내 상태 보내기: [x, y, z, yaw, pitch, flags, 무기, 체력]
@@ -4624,6 +4774,10 @@ function updateNet(dt) {
     const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0);
     netSend({ t:'s', p:[+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.yaw.toFixed(2), +P.pitch.toFixed(2), f, weapon, Math.round(P.hp)] });
   }
+  // 적에게 준 피해를 모아서 AI 담당자에게 (1초에 최대 20번)
+  hitSendT -= dt;
+  if (NET.hq.size && hitSendT <= 0) { hitSendT = 0.05; netSend({ t:'e', k:'ehit', h:[...NET.hq].map(([i, d]) => [i, Math.round(d * 10) / 10]) }); NET.hq.clear(); }
+  if (netIsAI()) sendAI(dt);
   // 팀원 모형 움직이기
   const k = 1 - Math.exp(-14 * dt);
   for (const mt of MATES.values()) {
@@ -4648,6 +4802,12 @@ function updateNet(dt) {
 }
 function netEvent(m) {
   const from = m.from | 0, mt = MATES.get(from);
+  if (m.k === 'ehit') {
+    // 팀원이 적에게 준 피해 (AI 담당자만 받음)
+    if (!netIsAI() || !Array.isArray(m.h)) return;
+    for (const h of m.h) { if (!Array.isArray(h)) continue; const e = enemies.find(o => o.nid === (h[0] | 0) && !o.dead); const d = +h[1]; if (e && d > 0) damageEnemy(e, d, tmpV3.set(0, 0, 0)); }
+    return;
+  }
   if (m.k === 'hit') {
     if (state !== 'play' && state !== 'inv') return;
     const d = Math.min(400, Math.max(0, +m.dmg || 0));
@@ -4671,6 +4831,7 @@ function netStartRaid() {
   const r = NET.room;
   if (MAPS[r.map]) { raidMap = r.map; buildLevel(raidMap); }
   HL.coop = true; NET.inRaid = true; clearMates();
+  nidSeq = 1; NET.matched = false; NET.hq.clear(); NET.deadQ = []; NET.esQ = []; NET.enQ = []; aiSendT = 0; aiFullT = 0;
   fixPack(); saveHL(); saveStash();
   beginRaid();
   if (raid && state === 'play') raid.coopN = r.players.length;
