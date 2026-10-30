@@ -4651,7 +4651,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.2';
+const GAME_VER = 'v1.2.3';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -5444,7 +5444,8 @@ function begin() {
   mode = 'wave'; clearRaid(); $('extList').classList.remove('show'); extShowT = 0; $('raidTop').hidden = true; $('waveTop').hidden = false; $('extList').innerHTML = ''; $('prompt').textContent = '';
   loadout = [0, mainChoice];
   loadout.forEach(applyAttachments); laserOn = true; lightOn = true;
-  for (const w of loadout) applyUpgradesTo(w, { rec:5, rel:5, mag:5 });
+  // 미니게임: 재장전, 탄창은 최대 강화. 반동은 파밍 모드와 같게 강화 없이
+  for (const w of loadout) applyUpgradesTo(w, { rec:0, rel:5, mag:5 });
   buildLevel(mapChoice);
   aiming = false;
   resetGame();
