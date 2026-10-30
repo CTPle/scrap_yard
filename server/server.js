@@ -246,7 +246,7 @@ function onMessage(c, msg) {
     if (k === 'down') c.down = true;
     if (k === 'up') c.down = false;
     // 그 밖의 사건(사격, 쓰러짐, 사망, 탈출 등)은 같은 판의 다른 사람에게 그대로 전달
-    const ALLOWED = ['shot', 'down', 'up', 'dead', 'extract', 'loot', 'boom', 'door', 'say'];
+    const ALLOWED = ['shot', 'throw', 'down', 'up', 'dead', 'extract', 'loot', 'boom', 'door', 'say'];
     if (!ALLOWED.includes(k)) return;
     const out = { t: 'e', k, from: c.id };
     if (msg.d !== undefined) out.d = msg.d;

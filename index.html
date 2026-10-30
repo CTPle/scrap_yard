@@ -2436,6 +2436,7 @@ function throwFrag() {
   m.position.copy(EYE).addScaledVector(f, 0.6).add(new THREE.Vector3(0, -0.15, 0)); scene.add(m);
   frags.push({ m, v:f.clone().multiplyScalar(24).add(new THREE.Vector3(0, 1.5, 0)), t:FRAG_FUSE }); // 빠르고 낮게 던져 궤적을 완만하게
   SND.play('swap'); SND.play('throw');
+  if (NET.inRaid) netSend({ t:'e', k:'throw' });
 }
 function updateFrags(dt) {
   if (fragCd > 0) fragCd -= dt;
@@ -2652,6 +2653,23 @@ function buildDrone(e) {
 // 적 번호(협동전에서 같은 적을 가리키는 데 씀)와 협동전 AI 계산용 임시 값
 let nidSeq = 1, aimMate = null;
 const _realPos = new THREE.Vector3(), _realEye = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
+function pivotLimb(m) {
+  const p = m.parent, pv = new THREE.Group(), h = m.scale.y;
+  pv.position.set(m.position.x, m.position.y + h / 2, m.position.z); p.add(pv); p.remove(m); pv.add(m); m.position.set(0, -h / 2, 0);
+  return pv;
+}
+// 적 걸음: 실제 이동 속도(e.mv)에 맞춰 보폭과 빠르기를 바꿈. 빨리 움직이면 크게 뛰고, 서 있으면 다리를 모음
+// aimArms: 겨누는 중이면 팔을 앞으로 들고(사격 반동 포함), 아니면 다리와 반대로 팔을 흔듦
+function enemyGait(e, dt, aimArms) {
+  if (!e.legs) return;
+  const ref = Math.max(1, e.speed), r = (e.mv || 0) / ref, moving = (e.mv || 0) > 0.25, heavy = e.type === 'brute' || e.type === 'boss' || e.type === 'bguard';
+  e.gp += dt * (heavy ? 4.5 : 7.5) * (moving ? Math.min(1.8, 0.5 + r * 0.8) : 0);
+  const amp = moving ? Math.min(r > 1.4 ? 0.85 : 0.55, 0.18 + r * 0.4) : 0, s = Math.sin(e.gp), q = 1 - Math.exp(-14 * dt);
+  e.legs[0].rotation.x += (s * amp - e.legs[0].rotation.x) * q; e.legs[1].rotation.x += (-s * amp - e.legs[1].rotation.x) * q;
+  if (!e.arms || !e.arms.length) return;
+  if (aimArms) e.arms.forEach(a => { a.rotation.x = -1.35 + Math.max(0, e.kickT || 0) * 2; });
+  else { const base = e.alert ? -0.7 : -0.25, k2 = e.alert ? 0.4 : 0.8; e.arms[0].rotation.x += (base - s * amp * k2 - e.arms[0].rotation.x) * q; e.arms[1].rotation.x += (base + s * amp * k2 - e.arms[1].rotation.x) * q; }
+}
 function spawnEnemy(type) {
   const far = SPAWNS.filter(s => Math.hypot(s[0] - P.pos.x, s[1] - P.pos.z) > 16);
   const sp = (far.length ? far : SPAWNS)[Math.floor(Math.random() * (far.length || SPAWNS.length))];
@@ -2663,6 +2681,9 @@ function spawnEnemyAt(type, x, z, alert, y = 0) {
   const e = { type, hp:T.hp * scale, maxHp:T.hp * scale, speed:T.speed * (1 + Math.min(0.25, wave * 0.02)), r:T.r, col:T.col,
               cd:rand(1.2, 2.4), t:Math.random() * 10, losT:0, seen:false, noLos:0, phase:rand(0, 6.28), kickT:0, flashT:0, stuck:0, side:0, sideT:0, burst:0, burstT:0, last:new THREE.Vector3() };
   e.g = type === 'grunt' ? buildGrunt(e) : type === 'brute' ? buildBrute(e) : type === 'boss' ? buildBoss(e) : type === 'jugg' ? buildJugg(e) : type === 'snp' ? buildSniper(e) : type === 'bguard' ? buildBGuard(e) : buildDrone(e);
+  // 다리와 팔이 위쪽 끝(엉덩이, 어깨)을 축으로 돌도록 바꿈 (가운데를 축으로 돌면 가위처럼 보임)
+  if (e.legs) e.legs = e.legs.map(pivotLimb); if (e.legs2) e.legs2 = e.legs2.map(pivotLimb); if (e.arms && e.arms.length) e.arms = e.arms.map(pivotLimb);
+  e.mv = 0; e.gp = Math.random() * 6;
   e.isBoss = ['boss', 'jugg', 'snp', 'bguard'].includes(type);
   if (type === 'snp') { e.name = '저격수'; e.aimT = 0; e.cd = 2; }
   if (type === 'bguard') { e.name = '보스가드'; }
@@ -2870,8 +2891,8 @@ function updateEnemy(e, dt, eye) {
       }
       g.rotation.y += (((e.look + (walking ? 0 : Math.sin(e.t * 0.5 + e.phase) * 0.7)) - g.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 4);
       if (g.rotation.y > Math.PI) g.rotation.y -= Math.PI * 2; else if (g.rotation.y < -Math.PI) g.rotation.y += Math.PI * 2;
-      if (e.legs) { const wk = walking ? Math.sin(e.t * 5) * 0.4 : 0; e.legs[0].rotation.x = wk; e.legs[1].rotation.x = -wk; }
-      if (e.arms) e.arms.forEach(a => a.rotation.x = -0.3);
+      e.mv += ((walking ? e.speed * 0.35 : 0) - e.mv) * Math.min(1, dt * 6);
+      enemyGait(e, dt, false);
       // 발견: 정면 시야각(약 130도) 안에서 보이거나, 아주 가까이 오거나, 달리는 소리가 들리면
       e.losT -= dt;
       if (e.losT <= 0) {
@@ -2921,10 +2942,8 @@ function updateEnemy(e, dt, eye) {
       else if (approach) { const f = flowDir(g.position, g.position.y); if (f) { mx = f.x; mz = f.z; } else { mx = nx; mz = nz; } }
       else if (dist < near) { mx = -nx; mz = -nz; }
       else { const sd = Math.sin(e.t * 0.7 + e.phase); mx = -nz * sd * 0.7; mz = nx * sd * 0.7; }
-      const walk = e.t * (e.type === 'brute' ? 5 : 9);
-      e.legs[0].rotation.x = Math.sin(walk) * 0.5; e.legs[1].rotation.x = -Math.sin(walk) * 0.5;
       if (e.kickT > 0) e.kickT -= dt;
-      e.arms.forEach(a => a.rotation.x = -1.35 + Math.max(0, e.kickT) * 2);
+      enemyGait(e, dt, e.seen || e.aiming || e.mg > 0 || e.burst > 0);
       e.cd -= dt;
       if (e.type === 'grunt') {
         if (e.cd <= 0) {
@@ -3037,6 +3056,7 @@ function updateEnemy(e, dt, eye) {
     }
     g.position.x = clamp(g.position.x, -BX + e.r, BX - e.r); g.position.z = clamp(g.position.z, -BZ + e.r, BZ - e.r);
     const moved = Math.hypot(g.position.x - e.last.x, g.position.z - e.last.z);
+    e.mv += (Math.min(20, moved / Math.max(dt, 1e-3)) - e.mv) * Math.min(1, dt * 8);
     if (ml > 0.3 && moved < e.speed * dt * 0.25) {
       e.stuck += dt;
       if (e.stuck > 0.4) {
@@ -3115,6 +3135,7 @@ function updatePlayer(dt) {
   ix += touchMove.x; iz += touchMove.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
   const sprint = (keys.ShiftLeft || keys.ShiftRight) && iz < 0 && !aiming && !P.downed;
+  P.sprinting = sprint;
   if (sprint && crouch) setCrouch(false);
   crouchT += ((crouch ? 1 : 0) - crouchT) * Math.min(1, dt * 10);
   const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (P.downed ? 0.35 : 1); // 쓰러지면 기어감
@@ -4605,7 +4626,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.1.2';
+const GAME_VER = 'v1.2.0';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4676,34 +4697,97 @@ function nameTag(text) {
   sp.raycast = () => {}; // 이름표는 총알 판정에서 제외 (그대로 두면 사격 계산이 오류로 멈춤)
   return sp;
 }
+// 관절: 위쪽 끝(어깨, 엉덩이, 무릎)을 축으로 돌도록 상자를 축 그룹 아래에 매닮
+function limb(parent, mat, w, h, d, x, y, z) { const pv = new THREE.Group(); pv.position.set(x, y, z); parent.add(pv); part(pv, BOX, mat, [w, h, d], [0, -h / 2, 0]); return pv; }
 function makeMate(id) {
   // 같은 파티: 파란 옷과 머리 위 닉네임 / 다른 파티: 갈색 옷, 이름 없음
   const party = isParty(id), M2 = party ? mateMats : foeMats;
   const g = new THREE.Group(), body = new THREE.Group();
   g.add(body);
-  part(body, BOX, M2.dark, [0.22, 0.8, 0.24], [-0.13, 0.4, 0]);
-  part(body, BOX, M2.dark, [0.22, 0.8, 0.24], [0.13, 0.4, 0]);
-  part(body, BOX, M2.body, [0.56, 0.7, 0.32], [0, 1.15, 0]);
-  part(body, BOX, M2.body, [0.16, 0.62, 0.18], [-0.38, 1.12, 0]);
-  part(body, BOX, M2.body, [0.16, 0.62, 0.18], [0.38, 1.12, 0]);
-  const head = part(body, BOX, M2.skin, [0.3, 0.3, 0.3], [0, 1.66, 0]); head.userData.head = true;
-  part(body, BOX, M2.dark, [0.08, 0.08, 0.55], [0.22, 1.2, -0.3]); // 총
+  const hips = new THREE.Group(); hips.position.y = 0.9; body.add(hips);
+  const thighL = limb(hips, M2.dark, 0.21, 0.46, 0.23, -0.13, 0, 0), thighR = limb(hips, M2.dark, 0.21, 0.46, 0.23, 0.13, 0, 0);
+  const shinL = limb(thighL, M2.dark, 0.19, 0.46, 0.21, 0, -0.46, 0), shinR = limb(thighR, M2.dark, 0.19, 0.46, 0.21, 0, -0.46, 0);
+  const torso = new THREE.Group(); hips.add(torso);
+  part(torso, BOX, M2.body, [0.56, 0.62, 0.32], [0, 0.33, 0]);
+  const neck = new THREE.Group(); neck.position.y = 0.66; torso.add(neck);
+  const head = part(neck, BOX, M2.skin, [0.3, 0.3, 0.3], [0, 0.15, 0]); head.userData.head = true;
+  const armL = limb(torso, M2.body, 0.15, 0.58, 0.17, -0.36, 0.6, 0), armR = limb(torso, M2.body, 0.15, 0.58, 0.17, 0.36, 0.6, 0);
+  const gun = new THREE.Group(); gun.position.set(0.1, 0.38, -0.3); torso.add(gun);
+  part(gun, BOX, M2.dark, [0.08, 0.1, 0.64], [0, 0, -0.12]); part(gun, BOX, M2.dark, [0.06, 0.16, 0.08], [0, -0.1, 0.08]);
   const tag = party ? nameTag(nickOf(id)) : new THREE.Object3D(); tag.position.set(0, 2.25, 0); g.add(tag);
   // 레이저와 라이트 빛줄기 (켠 사람 말고 다른 사람에게도 보이게)
   const lz = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), laserMat); lz.frustumCulled = false; lz.visible = false; scene.add(lz);
   const ld = new THREE.Mesh(laserDot.geometry, laserDot.material); ld.visible = false; scene.add(ld);
   const beam = new THREE.Mesh(beamGeo, beamMat); beam.visible = false; beam.frustumCulled = false; scene.add(beam);
-  const mt = { id, g, body, tag, party, lz, ld, beam, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
+  const mt = { id, g, body, tag, party, lz, ld, beam, hips, thighL, thighR, shinL, shinR, torso, neck, armL, armR, gun,
+    ph:0, mv:0, fs:0, ss:0, kick:0, throwT:0, lx:0, lz0:0, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
   g.userData.mate = mt; g.visible = false;
   scene.add(g); MATES.set(id, mt);
   return mt;
+}
+// 팀원 동작: 걷기/달리기/옆걸음/뒷걸음, 앉아 걷기, 조준, 사격 반동, 재장전, 수류탄 던지기, 쓰러져 기어가기, 무릎 꿇고 살리기
+// flags: 1 앉기, 2 쓰러짐, 4 레이저, 8 라이트, 16 달리기, 32 재장전, 64 조준, 128 살리는 중
+function animateMate(mt, dt) {
+  const g = mt.g, f = mt.flags, q = 1 - Math.exp(-16 * dt);
+  const L = (o, k, v) => { o[k] += (v - o[k]) * q; };
+  const down = mt.down, crouchF = !!(f & 1) && !down, run = !!(f & 16) && !down && !crouchF, reload = !!(f & 32), aim = !!(f & 64), rev = !!(f & 128) && !down;
+  // 화면에 그려진 위치 변화로 이동 속도와 방향(앞뒤, 옆)을 구함
+  const vx = (g.position.x - mt.lx) / Math.max(dt, 1e-3), vz = (g.position.z - mt.lz0) / Math.max(dt, 1e-3); mt.lx = g.position.x; mt.lz0 = g.position.z;
+  const sy = Math.sin(g.rotation.y), cy = Math.cos(g.rotation.y), a8 = Math.min(1, dt * 8);
+  mt.mv += (Math.min(12, Math.hypot(vx, vz)) - mt.mv) * a8; mt.fs += (-(vx * sy + vz * cy) - mt.fs) * a8; mt.ss += ((vx * cy - vz * sy) - mt.ss) * a8;
+  const moving = mt.mv > 0.35;
+  mt.ph += dt * (down ? 3.5 : run ? 11 : crouchF ? 6.5 : 8.5) * (moving ? Math.min(1.3, 0.45 + mt.mv / (run ? 6 : 3)) : 0);
+  const s = Math.sin(mt.ph), amp = moving ? (run ? 0.85 : crouchF ? 0.38 : 0.55) * Math.min(1, mt.mv / 1.8) : 0;
+  const back = mt.fs < -0.3 ? -1 : 1, sideK = Math.abs(mt.ss) > Math.abs(mt.fs) * 1.2 ? 1 : 0;
+  mt.kick = Math.max(0, mt.kick - dt * 8); mt.throwT = Math.max(0, mt.throwT - dt);
+  // 몸 전체: 쓰러지면 엎드려 눕고(머리가 앞쪽), 나머지는 세움
+  L(mt.body.rotation, 'x', down ? -Math.PI / 2 : 0); L(mt.body.position, 'y', down ? 0.17 : 0); L(mt.body.position, 'z', down ? 0.55 : 0);
+  mt.gun.visible = !down && !rev;
+  let hipY = 0.9, torsoX = -0.04, tL = 0, tR = 0, tLz = 0, tRz = 0, sL, sR, aL, aR, aLz = 0.45, aRz = 0.08, gunY = 0.36, gunX = -0.15 + mt.pitch * 0.4, gunZ = 0;
+  if (down) {
+    // 기어가기: 두 팔을 번갈아 앞으로 뻗고 다리는 살짝 밂
+    hipY = 0.9; torsoX = 0; tL = 0.25 * s * (moving ? 1 : 0); tR = -tL; sL = -0.35 - Math.max(0, s) * 0.4 * (moving ? 1 : 0); sR = -0.35 - Math.max(0, -s) * 0.4 * (moving ? 1 : 0);
+    aL = Math.PI - 0.45 + s * (moving ? 0.55 : 0.1); aR = Math.PI - 0.45 - s * (moving ? 0.55 : 0.1); aLz = -0.25; aRz = 0.25;
+  } else if (rev) {
+    // 무릎 꿇고 앞으로 손 뻗어 살리기 (왼쪽 무릎 세움, 오른쪽 무릎 바닥)
+    hipY = 0.56; torsoX = -0.5; tL = 1.45; sL = -1.45; tR = 0.12; sR = -1.55;
+    aL = 1.05 + Math.sin(performance.now() / 180) * 0.12; aR = 1.05 - Math.sin(performance.now() / 180) * 0.12; aLz = 0.1; aRz = -0.1;
+  } else {
+    const sw = s * amp * back;
+    if (crouchF) { hipY = 0.6 + Math.abs(s) * 0.02 * (moving ? 1 : 0); torsoX = -0.22; tL = 0.95 + sw * 0.6; tR = 0.95 - sw * 0.6; sL = -1.55 + Math.max(0, sw) * 0.4; sR = -1.55 + Math.max(0, -sw) * 0.4; }
+    else {
+      hipY = 0.9 + Math.abs(s) * (run ? 0.05 : 0.025) * (moving ? 1 : 0); torsoX = run ? -0.3 : -0.04;
+      tL = sw * (1 - sideK * 0.7); tR = -sw * (1 - sideK * 0.7);
+      tLz = -s * amp * 0.45 * sideK; tRz = -s * amp * 0.45 * sideK;
+      sL = -(0.06 + Math.max(0, -tL) * 1.5 + (run && moving ? 0.35 : 0)); sR = -(0.06 + Math.max(0, -tR) * 1.5 + (run && moving ? 0.35 : 0));
+    }
+    // 팔: 달리기(총 내리고 팔 흔들기) / 조준(어깨 높이로 들어 올림) / 평소(가슴 앞에 낮게)
+    if (run && !aim) { aL = 0.55 - s * amp * 0.9; aR = 0.55 + s * amp * 0.9; aLz = 0.2; gunY = 0.3; gunX = -0.7; }
+    else if (aim) { aR = 1.5 + mt.pitch; aL = 1.55 + mt.pitch; aLz = 0.55; aRz = 0.12; gunY = 0.5; gunX = mt.pitch; }
+    else { aR = 0.75 + mt.pitch * 0.4; aL = 0.95 + mt.pitch * 0.4; }
+    if (reload) { aL = 0.45 + Math.sin(performance.now() / 110) * 0.25; aLz = 0.35; gunX = -0.35; }
+    aL -= mt.kick * 0.3; aR -= mt.kick * 0.3; gunZ = mt.kick * 0.07;
+  }
+  L(mt.hips.position, 'y', hipY); L(mt.torso.rotation, 'x', torsoX);
+  L(mt.thighL.rotation, 'x', tL); L(mt.thighR.rotation, 'x', tR); L(mt.thighL.rotation, 'z', tLz); L(mt.thighR.rotation, 'z', tRz);
+  L(mt.shinL.rotation, 'x', sL); L(mt.shinR.rotation, 'x', sR);
+  L(mt.armL.rotation, 'x', aL); L(mt.armL.rotation, 'z', aLz); L(mt.armR.rotation, 'z', aRz);
+  if (mt.throwT > 0 && !down) {
+    // 수류탄 던지기: 오른팔을 머리 뒤로 젖혔다가 앞으로 휘두름
+    const p2 = 1 - mt.throwT / 0.6;
+    mt.armR.rotation.x = p2 < 0.45 ? 0.8 + (3.6 - 0.8) * (p2 / 0.45) : 3.6 + (1.0 - 3.6) * ((p2 - 0.45) / 0.55);
+    mt.armR.rotation.z = -0.15; mt.gun.visible = false;
+  } else L(mt.armR.rotation, 'x', aR);
+  L(mt.gun.position, 'y', gunY); L(mt.gun.rotation, 'x', gunX); L(mt.gun.position, 'z', -0.3 + gunZ); L(mt.gun.rotation, 'z', reload ? 0.5 : 0);
+  L(mt.neck.rotation, 'x', down || rev ? 0.3 : mt.pitch * 0.6 - torsoX * 0.6);
+  mt.tag.position.y = down ? 0.9 : rev ? 1.65 : crouchF ? 1.8 : 2.25;
 }
 function mateState(a) {
   if (!raid || !Array.isArray(a) || a.length < 7) return;
   const id = a[0] | 0; if (id === NET.id) return;
   const mt = MATES.get(id) || makeMate(id);
   mt.tx = +a[1]; mt.ty = +a[2] - 1.7; mt.tz = +a[3]; mt.yaw = +a[4]; mt.pitch = +a[5]; mt.flags = a[6] | 0; mt.down = !!(mt.flags & 2);
-  if (!mt.seen) { mt.seen = true; mt.g.position.set(mt.tx, mt.ty, mt.tz); mt.g.visible = true; }
+  if (!mt.seen) { mt.seen = true; mt.g.position.set(mt.tx, mt.ty, mt.tz); mt.lx = mt.tx; mt.lz0 = mt.tz; mt.g.visible = true; }
 }
 function dropMate(id) { const mt = MATES.get(id); if (!mt) return; scene.remove(mt.g); scene.remove(mt.lz); scene.remove(mt.ld); scene.remove(mt.beam); MATES.delete(id); if (!MATES.size) mateTorch.intensity = 0; }
 // 라이트 빛줄기: 꼭짓점이 총구에 오고 +Y 쪽으로 퍼지는 원뿔 (길이 1, 끝 반지름 0.42)
@@ -4866,10 +4950,10 @@ function updatePuppets(dt) {
       let dr = e.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * k;
       e.fy = e.type === 'drone' ? e.ty - (M.droneH || 4.6) : g.position.y;
       e.t += dt;
-      const moving = Math.hypot(g.position.x - ox, g.position.z - oz) > dt * 0.3;
-      if (e.legs) { const wk = moving ? Math.sin(e.t * 7) * 0.5 : 0; e.legs[0].rotation.x = wk; e.legs[1].rotation.x = -wk; }
-      if (e.legs2) { const wk = moving ? Math.sin(e.t * 5) * 0.5 : 0; e.legs2[0].rotation.x = -wk; e.legs2[1].rotation.x = wk; }
-      if (e.arms) e.arms.forEach(a => a.rotation.x = e.alert ? -1.35 : -0.3);
+      const sp2 = Math.hypot(g.position.x - ox, g.position.z - oz) / Math.max(dt, 1e-3);
+      e.mv += (Math.min(20, sp2) - e.mv) * Math.min(1, dt * 8);
+      enemyGait(e, dt, e.alert);
+      if (e.legs2) { const wk = e.mv > 0.25 ? Math.sin(e.gp) * 0.5 : 0; e.legs2[0].rotation.x = -wk; e.legs2[1].rotation.x = wk; }
       if (e.rotors) e.rotors[0].rotation.y += dt * 30;
       if (e.minigun && e.st & 8) e.minigun.rotation.z += dt * 30;
     }
@@ -4897,7 +4981,8 @@ function updateNet(dt) {
   netSendT -= dt;
   if (netSendT <= 0) {
     netSendT = 1 / 15;
-    const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0) | (laserActive() && !(WEAPONS[weapon].scope && aimT > 0.85) ? 4 : 0) | (lightActive() ? 8 : 0);
+    const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0) | (laserActive() && !(WEAPONS[weapon].scope && aimT > 0.85) ? 4 : 0) | (lightActive() ? 8 : 0)
+      | (P.sprinting ? 16 : 0) | (reloading > 0 ? 32 : 0) | (aimT > 0.5 ? 64 : 0) | (reviveWho && reviveT > 0 ? 128 : 0);
     netSend({ t:'s', p:[+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.yaw.toFixed(2), +P.pitch.toFixed(2), f, weapon, Math.round(P.hp)] });
   }
   // 적에게 준 피해를 모아서 AI 담당자에게 (1초에 최대 20번)
@@ -4912,12 +4997,7 @@ function updateNet(dt) {
     const g = mt.g;
     g.position.x += (mt.tx - g.position.x) * k; g.position.y += (mt.ty - g.position.y) * k; g.position.z += (mt.tz - g.position.z) * k;
     let dy = mt.yaw - g.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); g.rotation.y += dy * k;
-    // 쓰러지면 눕고, 앉으면 몸을 낮춤
-    const lie = mt.down ? -Math.PI / 2 : 0, sq = mt.flags & 1 && !mt.down ? 0.72 : 1;
-    mt.body.rotation.x += (lie - mt.body.rotation.x) * k;
-    mt.body.position.y += ((mt.down ? 0.2 : 0) - mt.body.position.y) * k;
-    mt.body.scale.y += (sq - mt.body.scale.y) * k;
-    mt.tag.position.y = mt.down ? 0.9 : 2.25 * sq;
+    animateMate(mt, dt);
     const ld2 = updateMateGear(mt);
     if (ld2 !== null && ld2 < torchBest) { torchBest = ld2; torchMt = mt; }
   }
@@ -4956,7 +5036,9 @@ function netEvent(m) {
   else if (m.k === 'extract') { dropMate(from); if (isParty(from)) say(`${nickOf(from)}이(가) 탈출했습니다`, 1); }
   else if (m.k === 'door') { const v = VAULTS[m.d | 0]; if (v && !v.open) { setVaultState(v, true); SND.play('clear', 0.4); } }
   else if (m.k === 'loot') netDropRecv(m.d);
+  else if (m.k === 'throw' && mt) mt.throwT = 0.6;
   else if (m.k === 'shot' && mt && mt.g.visible) {
+    mt.kick = 1;
     // 팀원 사격: 총구 쪽에서 바라보는 방향으로 짧은 궤적
     const o = mt.g.position.clone(); o.y += mt.flags & 1 ? 1.0 : 1.4;
     const dir = new THREE.Vector3(-Math.sin(mt.yaw) * Math.cos(mt.pitch), Math.sin(mt.pitch), -Math.cos(mt.yaw) * Math.cos(mt.pitch));
