@@ -3452,7 +3452,7 @@ const ITEMS = {
   w1:{ kind:'weapon', wi:1, name:'펌프 산탄총', size:3, value:4000 },
   w2:{ kind:'weapon', wi:2, name:'소총', size:3, value:5000 },
   w3:{ kind:'weapon', wi:3, name:'유탄발사기', size:3, value:55000 },
-  w4:{ kind:'weapon', wi:4, name:'레일건', size:3, value:250000 },
+  w4:{ kind:'weapon', wi:4, name:'레일건', size:3, value:375000 }, // 상점가와 판매가(가치의 60%) 1.5배
   w5:{ kind:'weapon', wi:5, name:'저격총', size:3, value:8000 },
   w6:{ kind:'weapon', wi:6, name:'반자동 산탄총', size:3, value:4500 },
   s_reddot:{ kind:'scope', key:'reddot', name:'레드닷', size:1, value:1500 },
@@ -4675,7 +4675,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.6';
+const GAME_VER = 'v1.2.7';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
