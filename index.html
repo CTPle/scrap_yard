@@ -2305,8 +2305,9 @@ function fire() {
   SND.play(w.snd);
   recoil = Math.min(recoil + w.recoil, 0.3); kick = w.recoil;
   // 반동은 별도 값으로 쌓고 시간이 지나면 원래 조준점으로 복귀
-  recoilPitch = Math.min(0.35, recoilPitch + w.recoil * 0.22);
-  recoilYaw += rand(-1, 1) * w.recoil * (w.auto ? 0.06 : 0.03);
+  // 반동: 한 발마다 조준점이 위로 튀고 좌우로 흔들림 (v1.2.2 에서 약 1.8배 강화)
+  recoilPitch = Math.min(0.45, recoilPitch + w.recoil * 0.4);
+  recoilYaw += rand(-1, 1) * w.recoil * (w.auto ? 0.09 : 0.045);
   shotAgo = 0;
   flash.visible = true; flash.rotation.z = Math.random() * 3; flashT = 0.05;
   camera.updateMatrixWorld();
@@ -3191,7 +3192,7 @@ function updatePlayer(dt) {
   if (shakeAmt > 0) { camera.position.x += rand(-shakeAmt, shakeAmt); camera.position.y += rand(-shakeAmt, shakeAmt); shakeAmt = Math.max(0, shakeAmt - dt * 0.9); }
   shotAgo += dt;
   const firing = shotAgo < WEAPONS[weapon].rate * 1.3 + 0.05;
-  const rec = Math.exp(-dt * (firing ? 2.5 : 9));
+  const rec = Math.exp(-dt * (firing ? 1.8 : 8)); // 연사 중에는 천천히, 멈추면 빠르게 원래 조준점으로
   recoilPitch *= rec; recoilYaw *= rec;
   camera.rotation.set(clamp(P.pitch + recoilPitch, -1.5, 1.5), P.yaw + recoilYaw, -lo * 0.32);
   const wantAim = aiming && reloading <= 0 && switchT <= 0 ? 1 : 0;
@@ -3621,7 +3622,7 @@ const gunLabel = g => { const t = Object.values(g.up).reduce((a, b) => a + b, 0)
 const WBASE = WEAPONS.map(w => ({ dmg:w.dmg, recoil:w.recoil, reload:w.reload, mag:w.mag, charge:w.charge, rate:w.rate, auto:w.auto, headMul:w.headMul, magStep:undefined }));
 // 은신처(파밍) 모드 전용 무기 수치. magStep 이 있으면 탄창 강화가 단계당 그 발 수만큼 늘어남
 const RAID_W = {
-  0:{ auto:true, dmg:18 },                     // 권총: 연사 가능, 피해 감소 (중장갑 이상에게는 절반)
+  0:{ dmg:18 },                                // 권총: 한 번 누를 때 한 발 (연사 불가), 피해 감소 (중장갑 이상에게는 절반)
   2:{ mag:30, magStep:10 },                    // 소총: 기본 30발, 강화마다 +10발
   3:{ mag:2, dmg:640, magStep:1 },             // 유탄발사기: 기본 2발, 피해 2배, 강화마다 +1발
   5:{ mag:8, magStep:2, headMul:3.2 }          // 저격총: 기본 8발, 강화마다 +2발, 머리 피해 증가
@@ -4650,7 +4651,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.1';
+const GAME_VER = 'v1.2.2';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
