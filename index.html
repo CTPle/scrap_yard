@@ -4567,7 +4567,7 @@ function netOn(m) {
     NET.room = m.room;
     if (MAPS[m.room.map] && raidMap !== m.room.map && state !== 'play') { raidMap = m.room.map; if (vis) buildLevel(raidMap); }
   }
-  else if (m.t === 'start') { NET.room = m.room; NET.ai = m.ai | 0; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; netStartRaid(); return; }
+  else if (m.t === 'start') { NET.room = m.room; NET.ai = (m.ai | 0) || (m.room && m.room.host) || 0; NET.seed = m.seed | 0; NET.aiSeen = 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; netStartRaid(); return; }
   else if (m.t === 'S') { if (NET.inRaid && Array.isArray(m.p)) for (const a of m.p) mateState(a); return; }
   else if (m.t === 'e') { netEvent(m); return; }
   else if (m.t === 'ai') { netAI(m.d); return; }
@@ -4627,7 +4627,22 @@ function nearDownedMate() {
   for (const mt of MATES.values()) if (mt.g.visible && mt.down && Math.hypot(mt.g.position.x - P.pos.x, mt.g.position.z - P.pos.z) < 2.2 && Math.abs(mt.g.position.y - (P.pos.y - 1.7)) < 1.2) return mt;
   return null;
 }
-let netSendT = 0, reviveT = 0, reviveWho = null, hitSendT = 0, aiSendT = 0, aiFullT = 0;
+let netSendT = 0, reviveT = 0, reviveWho = null, hitSendT = 0, aiSendT = 0, aiFullT = 0, aiWarnT = 0;
+// 창이 가려지거나 최소화되면 브라우저가 화면 갱신을 멈춤. 협동전 중에는 백그라운드 작업자의 신호로
+// 적 계산과 위치 전송만 계속함 (방장 창이 가려져도 팀원 화면의 적이 멈추지 않게)
+let bgWorker = null, bgLast = 0;
+function startBgTick() {
+  if (bgWorker) return;
+  try {
+    const url = URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50);'], { type:'text/javascript' }));
+    bgWorker = new Worker(url);
+    bgWorker.onmessage = () => {
+      const now = performance.now(), dt = Math.min(0.1, (now - (bgLast || now)) / 1000); bgLast = now;
+      if (!document.hidden || !NET.inRaid || !raid || (state !== 'play' && state !== 'inv') || dt <= 0) return;
+      try { updateEnemies(dt); updateShots(dt); updateENades(dt); updateNet(dt); } catch (err) { console.error(err); }
+    };
+  } catch (_) { bgWorker = null; }
+}
 // ---------- 함께 쓰는 AI 적 ----------
 // 방장(AI 담당)만 적을 계산하고, 1초에 10번 적 위치와 적 총알, 유탄을 다른 사람에게 보냄
 // 다른 사람은 받은 대로 그리기만 하고, 맞힌 피해는 담당자에게 보냄. 전리품은 각자 따로 나옴
@@ -4680,6 +4695,7 @@ function dropEnemyQuiet(e) {
 }
 function netAI(d) {
   if (!NET.inRaid || netIsAI() || !d || typeof d !== 'object' || state === 'over') return;
+  NET.aiSeen = performance.now();
   const seen = new Set();
   if (Array.isArray(d.e)) for (const r of d.e) {
     if (!Array.isArray(r) || r.length < 9) continue;
@@ -4774,6 +4790,7 @@ function updateNet(dt) {
   hitSendT -= dt;
   if (NET.hq.size && hitSendT <= 0) { hitSendT = 0.05; netSend({ t:'e', k:'ehit', h:[...NET.hq].map(([i, d]) => [i, Math.round(d * 10) / 10]) }); NET.hq.clear(); }
   if (netIsAI()) sendAI(dt);
+  else if (state === 'play' && NET.aiSeen && performance.now() - NET.aiSeen > 3000 && (aiWarnT -= dt) <= 0) { aiWarnT = 5; say('방장 쪽 적 정보가 끊겼습니다. 적이 잠시 멈출 수 있습니다', 1); }
   // 팀원 모형 움직이기
   const k = 1 - Math.exp(-14 * dt);
   for (const mt of MATES.values()) {
@@ -4826,7 +4843,7 @@ function netStartRaid() {
   if (state === 'play' || $('hideOv').hidden) return;
   const r = NET.room;
   if (MAPS[r.map]) { raidMap = r.map; buildLevel(raidMap); }
-  HL.coop = true; NET.inRaid = true; clearMates();
+  HL.coop = true; NET.inRaid = true; clearMates(); startBgTick();
   nidSeq = 1; NET.matched = false; NET.hq.clear(); NET.deadQ = []; NET.esQ = []; NET.enQ = []; aiSendT = 0; aiFullT = 0;
   fixPack(); saveHL(); saveStash();
   beginRaid();
