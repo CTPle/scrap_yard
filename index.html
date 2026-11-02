@@ -54,6 +54,14 @@ canvas{ display:block; width:100%; height:100%; }
 .ammo .slots{ display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; margin-top:6px; max-width:62vw; margin-left:auto; }
 .ammo .slots span{ font-size:11px; padding:2px 6px; border:1px solid rgba(241,233,216,.3); color:var(--dim); }
 .ammo .slots span.on{ border-color:var(--amber); color:var(--amber); }
+/* 세션 남은 시간 10분부터 화면 위쪽 가운데에 크게 표시 (3분부터 빨갛게, 1분부터 깜빡임) */
+#endWarn{ position:absolute; top:calc(40px + env(safe-area-inset-top,0px)); left:50%; transform:translateX(-50%); display:flex; align-items:baseline; gap:10px; padding:6px 16px; background:rgba(20,14,8,.55); border:1px solid rgba(240,165,48,.55); color:var(--amber); font-weight:700; pointer-events:none; }
+#endWarn[hidden]{ display:none; }
+#endWarn span{ font-size:14px; }
+#endWarn b{ font-size:26px; letter-spacing:.04em; }
+#endWarn.hot{ color:#ff6a50; border-color:rgba(255,90,60,.75); background:rgba(40,8,6,.6); }
+#endWarn.blink{ animation:endBlink 1s steps(2, start) infinite; }
+@keyframes endBlink{ to{ visibility:hidden; } }
 .top{ position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); left:50%; transform:translateX(-50%); max-width:calc(100% - 420px); display:flex; flex-wrap:wrap; justify-content:center; gap:4px 22px; font-size:13px; color:var(--dim); white-space:nowrap; }
 .top[hidden]{ display:none !important; }
 #radar{ position:absolute; left:calc(14px + env(safe-area-inset-left,0px)); top:calc(14px + env(safe-area-inset-top,0px)); width:150px; height:150px; display:none; }
@@ -358,6 +366,7 @@ body.is-raid .waveonly{ display:none; }
       <span>다음 증원<b class="num" id="rReinf">2:00</b></span>
       <span>가방<b class="num" id="rBag">0/12</b></span>
     </div>
+    <div id="endWarn" hidden><span>탈출까지</span><b class="num" id="endTime">10:00</b></div>
     <div id="consum"><span>치료 <b class="num" id="rMed">0</b></span><span>수류탄 <b class="num" id="rFrag">0</b></span><span>수리 <b class="num" id="rRep">0</b></span></div>
     <div id="extList"></div>
     <canvas id="radar" width="300" height="300"></canvas>
@@ -3799,6 +3808,7 @@ function addExtract(ex) {
   extMarks.push(g);
 }
 function clearRaid() {
+  $('endWarn').hidden = true;
   $('radar').classList.remove('on'); $('extList').classList.remove('show'); extShowT = 0;
   $('bossBar').style.display = 'none';
   for (const b of lootBoxes) scene.remove(b.g);
@@ -4603,6 +4613,8 @@ function updateRaid(dt) {
   } else { raid.extT = 0; $('extBar').style.display = 'none'; }
   const sec = Math.max(0, Math.ceil(raid.t));
   setTxt('rTime', `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
+  { const ew = $('endWarn'), on = sec <= 600; if (ew.hidden === on) ew.hidden = !on;
+    if (on) { setTxt('endTime', `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`); ew.classList.toggle('hot', sec <= 180); ew.classList.toggle('blink', sec <= 60); } }
   setTxt('rBag', `${bagUsed()}/${raid.cap}` + (isTouch ? '' : ' (Tab)'));
   setTxt('rMed', String(raid.bag.filter(i => i === 'medkit').length) + (isTouch ? '' : ' (H)'));
   setTxt('rFrag', String(raid.bag.filter(i => i === 'frag').length) + (isTouch ? '' : ' (G)'));
@@ -4731,7 +4743,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.11';
+const GAME_VER = 'v1.2.12';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
