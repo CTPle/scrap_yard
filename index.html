@@ -589,14 +589,60 @@ const isTouch = matchMedia('(pointer:coarse)').matches;
 
 // ---------- 소리 ----------
 const SND = (() => {
-  let ac = null, master, nb, muted = false;
+  let ac = null, master, nb, muted = false, revIn, shaper;
+  const VOL = 0.8;
   function init() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-    ac = new AC(); master = ac.createGain(); master.gain.value = muted ? 0 : 0.55; master.connect(ac.destination);
+    ac = new AC(); master = ac.createGain(); master.gain.value = muted ? 0 : VOL;
+    // 압축기: 총소리를 크게 키워도 찢어지지 않게 큰 소리를 눌러 줌
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 5; comp.attack.value = 0.002; comp.release.value = 0.2;
+    master.connect(comp); comp.connect(ac.destination);
     nb = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // 울림(잔향): 총소리 꼬리가 공간에 퍼지는 느낌
+    const len = Math.floor(ac.sampleRate * 1.6), ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const b = ir.getChannelData(ch); for (let i = 0; i < len; i++) b[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+    const rev = ac.createConvolver(); rev.buffer = ir; revIn = ac.createGain(); revIn.gain.value = 0.32; revIn.connect(rev); rev.connect(master);
+    // 살짝 찌그러뜨려 묵직한 타격감
+    shaper = ac.createWaveShaper(); const n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; curve[i] = (1 + 6) * x / (1 + 6 * Math.abs(x)); }
+    shaper.curve = curve; shaper.connect(master);
   }
+  // 필터를 거친 잡음 한 덩이 (총성의 몸통, 꼬리, 딱 소리)
+  function nz(dur, vol, ftype, freq, delay = 0, toRev = 0, dist = false) {
+    const t = ac.currentTime + delay, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = nb; f.type = ftype; f.frequency.value = freq; f.Q.value = 0.7;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + 0.002); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    s.connect(f); f.connect(g); g.connect(dist ? shaper : master);
+    if (toRev) { const sg = ac.createGain(); sg.gain.value = toRev; g.connect(sg); sg.connect(revIn); }
+    s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+  }
+  // 낮게 떨어지는 쿵 소리 (총구 압력)
+  function thump(f1, f2, dur, vol, delay = 0) {
+    const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    o.connect(g); g.connect(shaper); o.start(t); o.stop(t + dur + 0.03);
+  }
+  // 총성: 딱(crack) + 몸통(body) + 쿵(thump) + 꼬리(tail, 잔향) + 기계음(mech)
+  // v: 크기, far: 0~1 멀수록 높은 소리가 줄고 둔탁해짐
+  function gun(o, v = 1, far = 0) {
+    if (far < 0.6) nz(0.035, o.crack * v * (1 - far), 'highpass', 1800);
+    nz(o.bodyDur, o.body * v, 'lowpass', o.bodyCut * (1 - far * 0.75), 0, 0.5, true);
+    thump(o.tf, o.tf2 || 38, o.tDur, o.thump * v);
+    nz(o.tailDur, o.tail * v, 'lowpass', o.tailCut * (1 - far * 0.5), 0.012, 1.1);
+    if (o.mech && far === 0) for (const [dl, f] of o.mech) { tone('square', f, null, 0.012, 0.06, dl); nz(0.03, 0.12, 'highpass', 3500, dl); }
+  }
+  const GUN = {
+    pistol:   { crack:0.9, body:0.85, bodyCut:2600, bodyDur:0.12, tf:190, tf2:50, tDur:0.09, thump:0.7, tail:0.3, tailDur:0.55, tailCut:1100, mech:[[0.06, 2600]] },
+    rifle:    { crack:0.85, body:0.75, bodyCut:3200, bodyDur:0.09, tf:230, tf2:60, tDur:0.06, thump:0.55, tail:0.2, tailDur:0.4, tailCut:1300 },
+    shotgun:  { crack:1.0, body:1.1, bodyCut:1700, bodyDur:0.3, tf:120, tf2:34, tDur:0.26, thump:1.0, tail:0.45, tailDur:1.0, tailCut:750, mech:[[0.42, 1400], [0.55, 1100]] },
+    shotgun2: { crack:0.95, body:0.95, bodyCut:1900, bodyDur:0.22, tf:135, tf2:38, tDur:0.19, thump:0.85, tail:0.35, tailDur:0.8, tailCut:850, mech:[[0.07, 2200]] },
+    sniper:   { crack:1.15, body:1.15, bodyCut:2400, bodyDur:0.38, tf:115, tf2:30, tDur:0.42, thump:1.05, tail:0.55, tailDur:1.5, tailCut:650, mech:[[0.6, 1500], [0.78, 1200]] },
+    enemy:    { crack:0.55, body:0.55, bodyCut:2800, bodyDur:0.1, tf:200, tf2:55, tDur:0.07, thump:0.4, tail:0.18, tailDur:0.5, tailCut:1000 }
+  };
   function tone(type, f, f2, dur, vol, delay = 0) {
     const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
@@ -610,25 +656,25 @@ const SND = (() => {
     s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
   }
   const FX = {
-    pistol:  () => { noise(0.12, 0.5, 3200); tone('sine', 170, 60, 0.1, 0.5); },
-    shotgun: () => { noise(0.32, 0.85, 1800); tone('sine', 120, 38, 0.26, 0.75); },
-    rifle:   () => { noise(0.07, 0.38, 4200); tone('square', 230, 80, 0.05, 0.1); },
+    pistol:  () => gun(GUN.pistol),
+    shotgun: () => gun(GUN.shotgun),
+    rifle:   () => gun(GUN.rifle),
     empty:   () => tone('square', 1800, null, 0.02, 0.07),
     reload:  (t) => { tone('square', 900, null, 0.03, 0.08); tone('square', 520, null, 0.05, 0.1, t * 0.55); tone('square', 1100, null, 0.03, 0.09, t * 0.95); },
     hit:     () => tone('triangle', 1500, null, 0.04, 0.12),
     kill:    () => { noise(0.28, 0.45, 900); tone('square', 210, 45, 0.22, 0.14); },
     hurt:    () => { tone('sawtooth', 210, 80, 0.2, 0.2); noise(0.1, 0.2, 1200); },
     pickup:  () => [660, 880, 1175].forEach((f, i) => tone('triangle', f, null, 0.09, 0.15, i * 0.05)),
-    eshot:   (v) => tone('square', 900, 280, 0.16, 0.09 * v),
+    eshot:   (v) => gun(GUN.enemy, v, Math.max(0, Math.min(0.9, 1 - v))), // 적 총성: 멀수록 작고 둔탁하게
     wave:    () => { tone('triangle', 440, null, 0.18, 0.2); tone('triangle', 660, null, 0.35, 0.2, 0.18); },
     clear:   () => [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, null, 0.14, 0.16, i * 0.09)),
-    launcher:() => { tone('sine', 260, 90, 0.15, 0.5); noise(0.12, 0.35, 1500); },
+    launcher:() => { thump(240, 70, 0.2, 0.9); nz(0.16, 0.6, 'lowpass', 1100, 0, 0.6, true); nz(0.04, 0.35, 'highpass', 1500); nz(0.6, 0.18, 'lowpass', 700, 0.02, 1); },
     boom:    () => { noise(0.8, 0.95, 650); tone('sine', 95, 28, 0.7, 0.8); },
-    rail:    () => { tone('sawtooth', 1500, 160, 0.38, 0.16); noise(0.22, 0.3, 6500); tone('sine', 80, 40, 0.3, 0.45); },
-    sniper:  () => { noise(0.45, 0.9, 2600); tone('sine', 140, 38, 0.38, 0.75); tone('square', 2200, 400, 0.05, 0.12); },
+    rail:    () => { tone('sawtooth', 1500, 160, 0.38, 0.22); nz(0.05, 0.8, 'highpass', 2500); nz(0.25, 0.55, 'bandpass', 5000, 0, 0.6); thump(90, 32, 0.35, 0.9); nz(0.9, 0.25, 'lowpass', 900, 0.02, 1); },
+    sniper:  () => gun(GUN.sniper),
     head:    () => { tone('triangle', 1800, null, 0.06, 0.18); tone('triangle', 2400, null, 0.12, 0.15, 0.05); },
     visor:   () => { tone('square', 1300, 900, 0.07, 0.1); tone('triangle', 3200, null, 0.1, 0.08, 0.02); },
-    shotgun2:() => { noise(0.22, 0.7, 2000); tone('sine', 140, 45, 0.18, 0.6); },
+    shotgun2:() => gun(GUN.shotgun2),
     charge:  (d) => { tone('sine', 180, 1700, d, 0.14); tone('sawtooth', 90, 420, d, 0.05); },
     alarm:   () => { for (let i = 0; i < 3; i++) { tone('sawtooth', 520, 880, 0.45, 0.13, i * 0.55); tone('sawtooth', 880, 520, 0.08, 0.1, i * 0.55 + 0.45); } },
     spin:    () => { tone('sawtooth', 120, 420, 0.45, 0.12); },
@@ -639,7 +685,7 @@ const SND = (() => {
   return {
     init,
     play(n, a) { if (ac && !muted && FX[n]) FX[n](a); },
-    toggle() { muted = !muted; if (ac) master.gain.setTargetAtTime(muted ? 0 : 0.55, ac.currentTime, 0.02); return muted; }
+    toggle() { muted = !muted; if (ac) master.gain.setTargetAtTime(muted ? 0 : VOL, ac.currentTime, 0.02); return muted; }
   };
 })();
 
@@ -4685,7 +4731,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.10.1';
+const GAME_VER = 'v1.2.11';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
