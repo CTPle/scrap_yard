@@ -2754,6 +2754,7 @@ function spawnEnemyAt(type, x, z, alert, y = 0) {
   return e;
 }
 function damageEnemy(e, d, dir) {
+  e.engaged = true; // 공격받으면 누구든 쫓음
   if (netPuppet()) { e.flashT = 0.08; if (e.pup) NET.hq.set(e.nid, (NET.hq.get(e.nid) || 0) + d); return false; }
   alertAround(e.g.position, 14, e.fy); e.alert = true;
   if (e.type === 'drone') d = e.hp + 1; // 드론은 어디에 맞아도 한 발에 격추
@@ -2986,7 +2987,7 @@ function updateEnemy(e, dt, eye) {
       e.losT -= dt;
       if (e.losT <= 0) {
         e.seen = dist < AI.see * seeMul() && losTo(from0, eye); e.losT = 0.3; e.noLos = e.seen ? 0 : e.noLos + 0.3;
-        if (e.seen) e.hunter = false;
+        if (e.seen) { e.hunter = false; e.engaged = true; }
         if (mode === 'raid' && e.anchor && !e.relentless && !e.seen && e.noLos > 18 && dist > 25) { e.alert = false; e.pt = { x:e.anchor.x, z:e.anchor.z }; e.ptT = 30; e.noLos = 0; return; }
       }
       const far = e.type === 'snp' ? 120 : e.type === 'bguard' ? 14 : e.type === 'jugg' ? AI.bFar + 6 : e.type === 'boss' ? AI.bFar + 4 : e.type === 'brute' ? AI.bFar : AI.gFar, near = e.type === 'snp' ? 0 : e.type === 'bguard' ? 4 : e.type === 'jugg' ? 4 : e.type === 'boss' ? AI.bNear + 2 : e.type === 'brute' ? AI.bNear : AI.gNear;
@@ -4430,6 +4431,7 @@ function reinfUnit(t, far) {
   else if (far) { const sp = farSpawn(); e = spawnEnemyAt(t, sp[0], sp[1], true, sp[2] || 0); }
   else e = spawnEnemy(t);
   e.reinf = true;
+  if (NET.inRaid) e.huntIds = new Set([NET.id, ...[...MATES.values()].filter(mt => mt.g.visible).map(mt => mt.id)]);
   if (raid.cfg.fastHunt) e.hunter = true; // 발견 전에는 빠르게 추적, 교전 중에는 원래 속도
   return e;
 }
@@ -4683,7 +4685,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.10';
+const GAME_VER = 'v1.2.10.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4909,18 +4911,30 @@ const ETYPE_LIST = Object.keys(ETYPES);
 const r2 = v => Math.round(v * 100) / 100;
 function netIsAI() { return NET.inRaid && NET.ai === NET.id; }
 function netPuppet() { return NET.inRaid && NET.ai !== NET.id; }
+// 증원군 추격 대상: 증원이 투입될 때 판에 있던 사람(huntIds)만 쫓음. 나중에 들어온 사람은
+// 그 적에게 발견되거나 그 적을 공격하기 전(engaged)에는 쫓지 않음. 쫓을 사람이 모두 없어지면 그 자리에서 순찰로 바뀜
+const mayHunt = (e, id) => !e.huntIds || e.engaged || e.huntIds.has(id);
+function huntToPatrol(e) {
+  e.alert = false; e.hunter = false; e.relentless = false; e.huntIds = null;
+  e.anchor = e.g.position.clone(); e.zone = 10; e.pt = null; e.ptT = 0; e.lost = 0;
+}
 function pickTarget(e, dt) {
-  if (!NET.inRaid || !MATES.size) return null;
+  if (!NET.inRaid) return null;
+  if (!MATES.size && !e.huntIds) return null;
   e.tgtT = (e.tgtT || 0) - dt;
   if (e.tgtT > 0 && (e.tgt === null || (e.tgt && MATES.get(e.tgt.id) === e.tgt && e.tgt.g.visible && !e.tgt.down))) return e.tgt;
   e.tgtT = 1;
   const gp = e.g.position, dist = (x, y, z) => Math.hypot(x - gp.x, z - gp.z) + Math.abs(y - gp.y) * 3;
-  let best = null, bd = P.downed ? Infinity : dist(P.pos.x, P.pos.y - 1.7, P.pos.z) * (e.tgt === null ? 0.8 : 1);
+  const meOk = !P.downed && mayHunt(e, NET.id);
+  let best = null, bd = meOk ? dist(P.pos.x, P.pos.y - 1.7, P.pos.z) * (e.tgt === null ? 0.8 : 1) : Infinity, any = meOk;
   for (const mt of MATES.values()) {
-    if (!mt.g.visible || mt.down) continue;
+    if (!mt.g.visible || mt.down || !mayHunt(e, mt.id)) continue;
+    any = true;
     const d = dist(mt.tx, mt.ty, mt.tz) * (e.tgt === mt ? 0.8 : 1);
     if (d < bd) { bd = d; best = mt; }
   }
+  // 쫓을 수 있는 사람이 하나도 없으면(모두 탈출, 사망, 쓰러짐): 증원군은 순찰로 바뀌고, 나는 기본 대상으로
+  if (!any && e.huntIds && e.alert && !e.engaged && ![...MATES.values()].some(mt => e.huntIds.has(mt.id) && mt.g.visible) && !(e.huntIds.has(NET.id) && P.downed)) huntToPatrol(e);
   e.tgt = best;
   return best;
 }
