@@ -2852,6 +2852,7 @@ const gunAmber = gm('#e6a632', { metalness:0.2, roughness:0.5, map:GUN_TEX.poly 
 const gunWood = gm('#8f5e36', { metalness:0.05, roughness:0.5, map:GUN_TEX.wood });
 const gunRubber = gm('#121314', { metalness:0, roughness:0.95 });
 const gunBrass = gm('#c99a3c', { metalness:0.85, roughness:0.3 });
+const gunWhite = gm('#e3e7ea', { metalness:0.1, roughness:0.35 });  // 레일건 흰 몸체
 const gunHole = new THREE.MeshBasicMaterial({ color:'#050506' });                         // 총구, 구멍
 const vm = new THREE.Group(); wCam.add(vm);
 const railCoilMat = new THREE.MeshBasicMaterial({ color:'#6ff2ff' });
@@ -2967,7 +2968,7 @@ const models = [];
 
   // ---- 4 레일건: 기존 구조(코일, 충전 구슬, 옆면 게이지)는 그대로 두고 방열판, 축전지, 이음선, 개머리를 더함 ----
   const rg = new THREE.Group(), cyan = railCoilMat;
-  B(rg, gunDark, [0.1, 0.14, 0.6], [0, 0.01, -0.22]);
+  B(rg, gunWhite, [0.1, 0.14, 0.6], [0, 0.01, -0.22]);
   B(rg, gunMetal, [0.025, 0.05, 0.62], [-0.035, 0.03, -0.68]);
   B(rg, gunMetal, [0.025, 0.05, 0.62], [0.035, 0.03, -0.68]);
   for (const sx of [-1, 1]) B(rg, gunSteel, [0.03, 0.06, 0.02], [sx * 0.035, 0.03, -0.985]);
@@ -2979,8 +2980,8 @@ const models = [];
   C(rg, gunBlack, 0.008, 0.3, [0.044, -0.065, -0.42]);                                                    // 전선
   B(rg, gunMetal, [0.06, 0.16, 0.07], [0, -0.12, -0.02], [0.3]);
   guard(rg, -0.085, -0.075, 0.0); trig(rg, -0.065, -0.04);
-  B(rg, gunDark, [0.05, 0.06, 0.2], [0, 0.11, -0.15]);
-  B(rg, gunDark, [0.07, 0.1, 0.18], [0, -0.01, 0.17]); B(rg, gunRubber, [0.075, 0.11, 0.02], [0, -0.01, 0.27]);
+  B(rg, gunWhite, [0.05, 0.06, 0.2], [0, 0.11, -0.15]);
+  B(rg, gunWhite, [0.07, 0.1, 0.18], [0, -0.01, 0.17]); B(rg, gunRubber, [0.075, 0.11, 0.02], [0, -0.01, 0.27]);
   const orb = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color:'#9ff6ff', transparent:true, opacity:0.85, depthWrite:false }));
   orb.position.set(0, 0.03, -0.96); orb.scale.setScalar(0.001); rg.add(orb); rg.userData.orb = orb;
   // 총 왼쪽 옆면 충전 게이지: 검은 틀 안에 칸 8개. 뒤쪽 칸부터 앞쪽으로 차오름
@@ -5874,7 +5875,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.17';
+const GAME_VER = 'v1.2.17.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
