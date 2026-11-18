@@ -610,7 +610,79 @@ const isTouch = matchMedia('(pointer:coarse)').matches;
 
 // ---------- 소리 ----------
 const SND = (() => {
-  let ac = null, master, nb, muted = false, revIn, shaper;
+  let ac = null, master, nb, muted = false, revIn, shaper, rev, envKind = 'outdoor';
+  const IRS = {}, BUF = {};
+  // ---------- 총성 합성 (계산으로 소리 파형을 만들어 버퍼에 담음) ----------
+  // 이차 필터 (저역, 고역, 대역 통과)를 배열에 바로 적용
+  function biq(x, type, f, q, sr) {
+    const w = 2 * Math.PI * Math.min(f, sr * 0.45) / sr, c = Math.cos(w), a = Math.sin(w) / (2 * q);
+    let b0, b1, b2; if (type === 'lp') { b0 = (1 - c) / 2; b1 = 1 - c; b2 = b0; } else if (type === 'hp') { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = b0; } else { b0 = a; b1 = 0; b2 = -a; }
+    const a0 = 1 + a, a1 = -2 * c / a0, a2 = (1 - a) / a0; b0 /= a0; b1 /= a0; b2 /= a0;
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) { const xi = x[i], y = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = xi; y2 = y1; y1 = y; x[i] = y; }
+    return x;
+  }
+  function makeShot(p, sr, seed) {
+    let r = seed; const rnd = () => (r = r * 16807 % 2147483647) / 2147483647 * 2 - 1;
+    const n = Math.floor(sr * p.dur), out = new Float32Array(n), tmp = new Float32Array(n), T0 = Math.floor(sr * 0.002);
+    const add = g => { for (let i = 0; i < n; i++) out[i] += tmp[i] * g; };
+    const burst = (tau, att = 0.0004, at = 0) => { const s0 = T0 + Math.floor(at * sr); for (let i = 0; i < n; i++) { const t = (i - s0) / sr; tmp[i] = t < 0 ? 0 : rnd() * (t < att ? t / att : Math.exp(-(t - att) / tau)); } };
+    const jit = 1 + rnd() * 0.06;
+    // 1) 초음속 탄의 날카로운 '딱' (N자 압력파)
+    if (p.crack) { tmp.fill(0); const L = Math.floor(sr * 0.0007); for (let i = 0; i < L; i++) tmp[T0 + i] = 1 - 2 * i / L; biq(tmp, 'hp', 1500, 0.7, sr); add(p.crack); }
+    // 2) 총구 폭발: 밝고 짧은 앞부분 + 묵직하게 퍼지는 몸통
+    burst(p.snapTau); biq(tmp, 'lp', 7000, 0.7, sr); biq(tmp, 'hp', 300, 0.7, sr); add(p.snap);
+    if (p.air) { burst(0.0025); biq(tmp, 'hp', 4500, 0.7, sr); add(p.air); }                          // 공기를 찢는 높은 소리
+    burst(p.blastTau * jit); biq(tmp, 'lp', p.blastLP, 0.9, sr); biq(tmp, 'lp', p.blastLP * 1.3, 0.7, sr); biq(tmp, 'hp', 45, 0.7, sr); add(p.blast);
+    // 3) 낮게 떨어지는 '쿵' (가슴에 오는 압력)
+    for (let i = 0, ph = 0; i < n; i++) { const t = (i - T0) / sr; if (t < 0) { tmp[i] = 0; continue; } const f = (p.boomF1 + (p.boomF0 - p.boomF1) * Math.exp(-t / (p.boomTau * 0.6))) * jit; ph += 2 * Math.PI * f / sr; tmp[i] = Math.sin(ph) * Math.exp(-t / p.boomTau) * Math.min(1, t / 0.0015); }
+    add(p.boom);
+    // 4) 몸통 울림 (중음)
+    burst(p.bodyTau); biq(tmp, 'bp', p.bodyF * jit, 1.6, sr); biq(tmp, 'bp', p.bodyF * jit, 1.6, sr); add(p.body * 3);
+    // 5) 노리쇠, 탄피 쇳소리
+    for (const [at, amp, f] of p.mech || []) { const s0 = T0 + Math.floor(at * sr); for (let i = s0; i < n; i++) { const t = (i - s0) / sr, e = Math.exp(-t / 0.008); if (e < 0.001) break; out[i] += amp * e * (Math.sin(2 * Math.PI * f * t) + 0.6 * Math.sin(2 * Math.PI * f * 1.47 * t) + 0.4 * Math.sin(2 * Math.PI * f * 2.31 * t) + 0.5 * rnd()); } }
+    // 6) 포화로 묵직하고 단단하게 만든 뒤 크기 맞춤, 끝은 부드럽게 줄임
+    let pk = 0; for (let i = 0; i < n; i++) { out[i] = Math.tanh(out[i] * p.drive); pk = Math.max(pk, Math.abs(out[i])); }
+    const fo = Math.floor(sr * 0.03); for (let i = 0; i < fo; i++) out[n - 1 - i] *= i / fo;
+    for (let i = 0; i < n; i++) out[i] *= 0.95 / (pk || 1);
+    return out;
+  }
+  // 공간 울림 응답: 초반 반사음 + 점점 어두워지며 사라지는 꼬리. 협곡은 절벽에서 돌아오는 메아리를 몇 번 넣음
+  function makeIR(kind) {
+    const sr = ac.sampleRate, D = { indoor:[0.85, 0.15], canyon:[2.6, 0.5], outdoor:[1.8, 0.4] }[kind], len = Math.floor(sr * D[0]), b = ac.createBuffer(2, len, sr);
+    const early = kind === 'indoor' ? [[0.006, 0.6], [0.011, 0.5], [0.017, 0.45], [0.024, 0.4], [0.033, 0.32], [0.045, 0.25]]
+                : kind === 'canyon' ? [[0.012, 0.25], [0.105, 0.55], [0.14, 0.45], [0.23, 0.32], [0.31, 0.24], [0.47, 0.14], [0.66, 0.08]]
+                : [[0.015, 0.2], [0.06, 0.12]];
+    for (let ch = 0; ch < 2; ch++) {
+      const d = b.getChannelData(ch); let y = 0;
+      for (let i = 0; i < len; i++) { const t = i / sr, x = (Math.random() * 2 - 1) * Math.exp(-t / D[1]) * (kind === 'indoor' ? 0.5 : 0.35); const a = Math.max(0.04, 0.85 * Math.exp(-t / (D[1] * 1.5))); y += a * (x - y); d[i] = y; }
+      for (const [et, ea] of early) { const s0 = Math.floor((et + (ch ? 0.003 : 0)) * sr), L = Math.floor(sr * 0.012); let z = 0; for (let i = 0; i < L && s0 + i < len; i++) { z += 0.35 * ((Math.random() * 2 - 1) - z); d[s0 + i] += z * ea * Math.exp(-i / (L * 0.3)); } }
+    }
+    return b;
+  }
+  // 총성 버퍼 재생: 직접음 + 공간 울림. far(0~1)가 클수록 높은 소리가 깎이고 울림 비중이 커져 멀리서 들리는 소리가 됨
+  function shot(k, v = 1, far = 0) {
+    const list = BUF[k]; if (!list) return false;
+    const t = ac.currentTime, src = ac.createBufferSource(); src.buffer = list[Math.floor(Math.random() * list.length)]; src.playbackRate.value = 0.96 + Math.random() * 0.08;
+    const dry = ac.createGain(); dry.gain.value = v * (1 - far * 0.4);
+    let head = src;
+    if (far > 0.05) { const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600 + 16000 * Math.pow(1 - far, 2.2); src.connect(lp); head = lp; }
+    head.connect(dry); dry.connect(master);
+    const send = ac.createGain(); send.gain.value = v * (0.55 + far * 0.6); head.connect(send); send.connect(revIn);
+    src.start(t); return true;
+  }
+  // 총별 합성 값: 초음속 딱(crack), 앞부분(snap), 폭발 몸통(blast, 길이 blastTau, 밝기 blastLP), 쿵(boom, 시작/끝 높이, 길이), 중음 울림(body), 포화(drive), 쇳소리(mech: 시각, 크기, 높이)
+  const SHOT = {
+    pistol:   { dur:0.5, crack:0, air:1.2, snap:2.4, snapTau:0.004, blast:3.5, blastTau:0.022, blastLP:2200, boom:0.18, boomF0:160, boomF1:55, boomTau:0.05, body:1.2, bodyF:480, bodyTau:0.03, drive:2.5, mech:[[0.035, 0.25, 3200]] },
+    rifle:    { dur:0.55, crack:0.9, air:1.5, snap:2.2, snapTau:0.004, blast:4, blastTau:0.028, blastLP:1800, boom:0.3, boomF0:140, boomF1:50, boomTau:0.06, body:1.3, bodyF:380, bodyTau:0.035, drive:3, mech:[[0.03, 0.3, 2600], [0.065, 0.2, 1900]] },
+    shotgun:  { dur:0.9, crack:0, air:0.8, snap:2, snapTau:0.006, blast:4.5, blastTau:0.06, blastLP:1300, boom:0.35, boomF0:110, boomF1:38, boomTau:0.12, body:1.6, bodyF:300, bodyTau:0.06, drive:3.5 },
+    shotgun2: { dur:0.8, crack:0, air:1, snap:2.1, snapTau:0.005, blast:4.2, blastTau:0.05, blastLP:1500, boom:0.33, boomF0:115, boomF1:40, boomTau:0.1, body:1.5, bodyF:330, bodyTau:0.05, drive:3.2, mech:[[0.06, 0.3, 2200]] },
+    sniper:   { dur:1.0, crack:1.6, air:2.4, snap:2.6, snapTau:0.005, blast:4.6, blastTau:0.05, blastLP:1700, boom:0.3, boomF0:100, boomF1:32, boomTau:0.14, body:1.5, bodyF:320, bodyTau:0.06, drive:3.8 },
+    enemy:    { dur:0.55, crack:0.7, air:1.4, snap:2.3, snapTau:0.004, blast:3.8, blastTau:0.025, blastLP:2000, boom:0.2, boomF0:150, boomF1:55, boomTau:0.055, body:1.2, bodyF:420, bodyTau:0.03, drive:2.8, mech:[[0.03, 0.2, 2400]] },
+    launcher: { dur:0.6, crack:0, air:0.3, snap:1.4, snapTau:0.003, blast:3, blastTau:0.02, blastLP:1000, boom:0.35, boomF0:220, boomF1:70, boomTau:0.08, body:1.8, bodyF:260, bodyTau:0.04, drive:2, mech:[[0.05, 0.25, 1500]] },
+    pump:     { dur:0.25, crack:0, snap:0, snapTau:0.003, blast:0, blastTau:0.01, blastLP:1000, boom:0, boomF0:100, boomF1:50, boomTau:0.01, body:0.08, bodyF:1800, bodyTau:0.01, drive:1.5, mech:[[0.0, 0.6, 1400], [0.11, 0.5, 1100]] },
+    bolt:     { dur:0.3, crack:0, snap:0, snapTau:0.003, blast:0, blastTau:0.01, blastLP:1000, boom:0, boomF0:100, boomF1:50, boomTau:0.01, body:0.06, bodyF:2200, bodyTau:0.01, drive:1.5, mech:[[0.0, 0.5, 1700], [0.16, 0.55, 1250]] }
+  };
   const VOL = 0.8;
   function init() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
@@ -625,7 +697,12 @@ const SND = (() => {
     // 울림(잔향): 총소리 꼬리가 공간에 퍼지는 느낌
     const len = Math.floor(ac.sampleRate * 1.6), ir = ac.createBuffer(2, len, ac.sampleRate);
     for (let ch = 0; ch < 2; ch++) { const b = ir.getChannelData(ch); for (let i = 0; i < len; i++) b[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
-    const rev = ac.createConvolver(); rev.buffer = ir; revIn = ac.createGain(); revIn.gain.value = 0.32; revIn.connect(rev); rev.connect(master);
+    rev = ac.createConvolver(); rev.buffer = ir; revIn = ac.createGain(); revIn.gain.value = 0.32; revIn.connect(rev); rev.connect(master);
+    // 공간 울림: 실내(연구 시설), 협곡(절벽 메아리), 야외 세 가지를 미리 만들어 두고 맵에 따라 바꿈
+    for (const k of ['indoor', 'canyon', 'outdoor']) IRS[k] = makeIR(k);
+    rev.buffer = IRS[envKind] || IRS.outdoor;
+    // 총성 녹음 대신 실제 총성의 성분(초음속 탄 딱 소리, 총구 폭발, 낮은 쿵, 몸통 울림, 노리쇠 쇳소리)을 계산으로 합성해 미리 구워 둠. 총마다 3가지 변형
+    for (const k in SHOT) BUF[k] = [0, 1, 2].map(v => { const d = makeShot(SHOT[k], ac.sampleRate, 1234 + v * 777 + k.length * 31), b = ac.createBuffer(1, d.length, ac.sampleRate); b.copyToChannel ? b.copyToChannel(d, 0) : b.getChannelData(0).set(d); return b; });
     // 살짝 찌그러뜨려 묵직한 타격감
     shaper = ac.createWaveShaper(); const n = 1024, curve = new Float32Array(n);
     for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; curve[i] = (1 + 6) * x / (1 + 6 * Math.abs(x)); }
@@ -677,25 +754,25 @@ const SND = (() => {
     s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
   }
   const FX = {
-    pistol:  () => gun(GUN.pistol),
-    shotgun: () => gun(GUN.shotgun),
-    rifle:   () => gun(GUN.rifle),
+    pistol:  () => shot('pistol') || gun(GUN.pistol),
+    shotgun: () => { if (!shot('shotgun')) gun(GUN.shotgun); setTimeout(() => shot('pump', 0.7), 420); },
+    rifle:   () => shot('rifle') || gun(GUN.rifle),
     empty:   () => tone('square', 1800, null, 0.02, 0.07),
     reload:  (t) => { tone('square', 900, null, 0.03, 0.08); tone('square', 520, null, 0.05, 0.1, t * 0.55); tone('square', 1100, null, 0.03, 0.09, t * 0.95); },
     hit:     () => tone('triangle', 1500, null, 0.04, 0.12),
     kill:    () => { noise(0.28, 0.45, 900); tone('square', 210, 45, 0.22, 0.14); },
     hurt:    () => { tone('sawtooth', 210, 80, 0.2, 0.2); noise(0.1, 0.2, 1200); },
     pickup:  () => [660, 880, 1175].forEach((f, i) => tone('triangle', f, null, 0.09, 0.15, i * 0.05)),
-    eshot:   (v) => gun(GUN.enemy, v, Math.max(0, Math.min(0.9, 1 - v))), // 적 총성: 멀수록 작고 둔탁하게
+    eshot:   (v) => shot('enemy', v * 0.85, Math.max(0, Math.min(0.9, 1 - v))) || gun(GUN.enemy, v, Math.max(0, Math.min(0.9, 1 - v))), // 적 총성: 멀수록 작고 둔탁하게, 울림 비중은 커짐
     wave:    () => { tone('triangle', 440, null, 0.18, 0.2); tone('triangle', 660, null, 0.35, 0.2, 0.18); },
     clear:   () => [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, null, 0.14, 0.16, i * 0.09)),
-    launcher:() => { thump(240, 70, 0.2, 0.9); nz(0.16, 0.6, 'lowpass', 1100, 0, 0.6, true); nz(0.04, 0.35, 'highpass', 1500); nz(0.6, 0.18, 'lowpass', 700, 0.02, 1); },
+    launcher:() => { if (!shot('launcher')) { thump(240, 70, 0.2, 0.9); nz(0.16, 0.6, 'lowpass', 1100, 0, 0.6, true); } },
     boom:    () => { noise(0.8, 0.95, 650); tone('sine', 95, 28, 0.7, 0.8); },
     rail:    () => { tone('sawtooth', 1500, 160, 0.38, 0.22); nz(0.05, 0.8, 'highpass', 2500); nz(0.25, 0.55, 'bandpass', 5000, 0, 0.6); thump(90, 32, 0.35, 0.9); nz(0.9, 0.25, 'lowpass', 900, 0.02, 1); },
-    sniper:  () => gun(GUN.sniper),
+    sniper:  () => { if (!shot('sniper')) gun(GUN.sniper); setTimeout(() => shot('bolt', 0.7), 600); },
     head:    () => { tone('triangle', 1800, null, 0.06, 0.18); tone('triangle', 2400, null, 0.12, 0.15, 0.05); },
     visor:   () => { tone('square', 1300, 900, 0.07, 0.1); tone('triangle', 3200, null, 0.1, 0.08, 0.02); },
-    shotgun2:() => gun(GUN.shotgun2),
+    shotgun2:() => shot('shotgun2') || gun(GUN.shotgun2),
     charge:  (d) => { tone('sine', 180, 1700, d, 0.14); tone('sawtooth', 90, 420, d, 0.05); },
     alarm:   () => { for (let i = 0; i < 3; i++) { tone('sawtooth', 520, 880, 0.45, 0.13, i * 0.55); tone('sawtooth', 880, 520, 0.08, 0.1, i * 0.55 + 0.45); } },
     spin:    () => { tone('sawtooth', 120, 420, 0.45, 0.12); },
@@ -706,6 +783,8 @@ const SND = (() => {
   return {
     init,
     play(n, a) { if (ac && !muted && FX[n]) FX[n](a); },
+    // 맵에 맞는 공간 울림으로 바꿈 (실내, 협곡, 야외)
+    setEnv(k) { envKind = k; if (rev && IRS[k]) rev.buffer = IRS[k]; },
     toggle() { muted = !muted; if (ac) master.gain.setTargetAtTime(muted ? 0 : VOL, ac.currentTime, 0.02); return muted; }
   };
 })();
@@ -2517,6 +2596,7 @@ const MAPS = {
   }
 };
 function buildLevel(key) {
+  SND.setEnv(key === 'lab' ? 'indoor' : key === 'canyon' ? 'canyon' : 'outdoor');
   if (mapKey === key) return;
   if (level) {
     scene.remove(level);
@@ -6070,7 +6150,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.18.1';
+const GAME_VER = 'v1.2.18.2';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
