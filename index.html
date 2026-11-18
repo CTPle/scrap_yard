@@ -2014,11 +2014,11 @@ function canyonScenery() {
     const rockG = new THREE.IcosahedronGeometry(1, 0), blade = new THREE.ConeGeometry(1, 1, 3);
     const stoneM = new THREE.MeshStandardMaterial({ color:'#8a7c6a', roughness:0.95, flatShading:true, map:rockTex });
     const grassM = [new THREE.MeshStandardMaterial({ color:'#6f7f3a', roughness:1 }), new THREE.MeshStandardMaterial({ color:'#958f52', roughness:1 })];
-    const occupied = (x, z, r) => colliders.some(c => c.h > 0.25 && c.maxX - c.minX < 30 && c.maxZ - c.minZ < 30 && x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ);
+    const occupied = (x, z, r) => colliders.some(c => c.h > 0.25 && c.maxX - c.minX < 40 && c.maxZ - c.minZ < 300 && x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ);
     const stones = [], blades = [[], []], dm = new THREE.Object3D();
     for (let i = 0; i < 700; i++) {   // 절벽 밑 낙석: 반쯤 바위벽에 박힘
       const sd = rnd() < 0.5 ? -1 : 1, z = -BZ + 2 + rnd() * (BZ * 2 - 4), r = 0.35 + Math.pow(rnd(), 2) * 1.3, x = sd * (21.2 + r * 0.55 + rnd() * 0.6);
-      if (occupied(x, z, 0.3)) continue;
+      if (occupied(x, z, Math.max(0.3, r * 1.3))) continue;
       stones.push([x, r * 0.3, z, r * (1 + rnd() * 0.5), r * (0.6 + rnd() * 0.4), r * (1 + rnd() * 0.6), rnd() * 6, rnd() * 0.5]);
     }
     for (let i = 0; i < 900; i++) {   // 바닥 자갈
@@ -2086,7 +2086,246 @@ function canyonScenery() {
   };
   gate(-BZ, 0, 0, '북측 차단문');
   gate(BZ, 9, 3.2, '남측 차단문');
+  CANYON_T = { conc:concTex, haz:hazTex, dirt:dirtTex };
   return flora;
+}
+let CANYON_T = null;
+// ---------- 협곡 시설: 초소, 감시탑, 정비 창고, 통신 중계소, 연료 저장소, 중간 벙커 ----------
+// 긴 통로 구간에 숨을 곳과 파밍할 곳을 더함. 전리품 상자 자리는 RAID.canyon.loot, 벙커 경비병은 RAID.canyon.guards
+function canyonFacilities() {
+  const T = CANYON_T;
+  let sd = 4242; const rnd = () => (sd = sd * 16807 % 2147483647) / 2147483647;
+  // ---- 질감 ----
+  const plankTex = canvasTex2(256, 512, (g, w, h) => {
+    const pw = w / 6;
+    for (let i = 0; i < 6; i++) { const v = 105 + Math.random() * 30; g.fillStyle = `rgb(${v},${v * 0.82},${v * 0.62})`; g.fillRect(i * pw, 0, pw, h);
+      g.strokeStyle = 'rgba(50,35,20,.25)'; g.lineWidth = 1; for (let k = 0; k < 7; k++) { g.beginPath(); const x = i * pw + 4 + Math.random() * (pw - 8); g.moveTo(x, 0); g.bezierCurveTo(x + 4, h * 0.3, x - 4, h * 0.6, x + 2, h); g.stroke(); }
+      g.fillStyle = 'rgba(30,20,12,.7)'; g.fillRect(i * pw, 0, 2, h); g.fillStyle = '#3a3a3a'; for (const y of [30, h / 2, h - 30]) { g.fillRect(i * pw + 8, y, 3, 3); g.fillRect(i * pw + pw - 11, y, 3, 3); } }
+    noiseFill(g, w, h, 3000, 0.1, 2); g.fillStyle = 'rgba(160,160,150,.18)'; g.fillRect(0, 0, w, h);
+  }, [1.8, 2.7], { bump:0.03, rough:0.9 });
+  const corrTex = canvasTex2(256, 256, (g, w, h) => {
+    g.fillStyle = '#7d8478'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) { const gr = g.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(0.5, 'rgba(0,0,0,.22)'); gr.addColorStop(1, 'rgba(255,255,255,.18)'); g.fillStyle = gr; g.fillRect(x, 0, 16, h); }
+    for (let i = 0; i < 14; i++) { const x = Math.random() * w, y = Math.random() * h * 0.5, len = 40 + Math.random() * 160, gr = g.createLinearGradient(0, y, 0, y + len); gr.addColorStop(0, 'rgba(140,70,30,.6)'); gr.addColorStop(1, 'rgba(140,70,30,0)'); g.fillStyle = gr; g.fillRect(x, y, 3 + Math.random() * 10, len); }
+    noiseFill(g, w, h, 3000, 0.12, 2); grime(g, w, h, 4, 0.2);
+  }, [1.2, 1.2], { bump:0.06, rough:0.6 });
+  const bagTex = canvasTex2(256, 128, (g, w, h) => {
+    g.fillStyle = '#5c5240'; g.fillRect(0, 0, w, h);
+    for (let r = 0; r < 2; r++) for (let i = -1; i < 3; i++) {
+      const x = i * w / 2 + (r ? w / 4 : 0), y = r * h / 2, bw = w / 2 - 4, bh = h / 2 - 4;
+      const gr = g.createLinearGradient(0, y, 0, y + bh); gr.addColorStop(0, '#a7976f'); gr.addColorStop(0.5, '#8f805c'); gr.addColorStop(1, '#6a5d42'); g.fillStyle = gr;
+      g.beginPath(); g.moveTo(x + 2 + 10, y + 2); g.lineTo(x + bw - 8, y + 2); g.quadraticCurveTo(x + bw + 2, y + 2, x + bw + 2, y + bh / 2); g.quadraticCurveTo(x + bw + 2, y + bh + 2, x + bw - 8, y + bh + 2); g.lineTo(x + 12, y + bh + 2); g.quadraticCurveTo(x + 2, y + bh + 2, x + 2, y + bh / 2); g.quadraticCurveTo(x + 2, y + 2, x + 12, y + 2); g.fill();
+      g.strokeStyle = 'rgba(60,50,35,.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x + 14, y + bh / 2); g.lineTo(x + bw - 10, y + bh / 2); g.stroke();
+    }
+    noiseFill(g, w, h, 2500, 0.12, 2);
+  }, [1.4, 0.66], { bump:0.08, rough:1 });
+  const fenceTex = canvasTex2(128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h); g.strokeStyle = 'rgba(170,175,175,1)'; g.lineWidth = 3;
+    for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(k * w, 0); g.lineTo(k * w + w, h); g.stroke(); g.beginPath(); g.moveTo(k * w + w, 0); g.lineTo(k * w, h); g.stroke(); }
+    g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w, h / 2); g.lineTo(w / 2, h); g.lineTo(0, h / 2); g.closePath(); g.stroke();
+  });
+  const netTex = canvasTex2(256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) { g.fillStyle = ['#4b5a33', '#5e6b3c', '#6e5f42', '#3e4a2c', '#857a55'][i % 5]; g.save(); g.translate(Math.random() * w, Math.random() * h); g.rotate(Math.random() * 6); g.beginPath(); g.ellipse(0, 0, 6 + Math.random() * 10, 3 + Math.random() * 5, 0, 0, Math.PI * 2); g.fill(); g.restore(); }
+    g.strokeStyle = 'rgba(40,40,30,.8)'; g.lineWidth = 2; for (let k = 0; k < w; k += 21) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, h); g.stroke(); g.beginPath(); g.moveTo(0, k); g.lineTo(w, k); g.stroke(); }
+  });
+  // ---- 재질 ----
+  const MT = {
+    metal:std('#5d656c', { metalness:0.4, roughness:0.5 }), dark:std('#2d3236', { metalness:0.4, roughness:0.55 }), olive:std('#4f5a39', { metalness:0.15, roughness:0.75 }),
+    wood:std('#7b5b3a', { metalness:0, roughness:0.8 }), mat:std('#6c7157', { metalness:0, roughness:0.95 }), red:std('#9b2c22', { metalness:0.3, roughness:0.5 }),
+    drumB:std('#35587a', { metalness:0.35, roughness:0.5 }), drumY:std('#b5871d', { metalness:0.3, roughness:0.5 }), drumR:std('#8a3324', { metalness:0.3, roughness:0.55 }),
+    tank:std('#c9c6bc', { metalness:0.3, roughness:0.45 }), rubber:std('#1b1c1e', { metalness:0, roughness:0.9 }), truck:std('#56653f', { metalness:0.3, roughness:0.6 }),
+    glass:new THREE.MeshStandardMaterial({ color:'#1d2a33', metalness:0.6, roughness:0.15 }),
+    netM:new THREE.MeshStandardMaterial({ map:netTex, transparent:true, alphaTest:0.35, side:THREE.DoubleSide, roughness:1 }),
+    fenceM:new THREE.MeshStandardMaterial({ map:fenceTex, transparent:true, alphaTest:0.4, side:THREE.DoubleSide, roughness:0.5, metalness:0.5 })
+  };
+  const D = (mat, x, y, z, w, h, d, ry = 0) => { const m = deco(BOXG, mat, [w, h, d], [x, y, z]); m.rotation.y = ry; m.receiveShadow = true; return m; };
+  const cylZ = (mat, x, y, z, r, L) => { const m = deco(CYL, mat, [r, L, r], [x, y, z]); m.rotation.x = Math.PI / 2; return m; };
+  const cylX = (mat, x, y, z, r, L) => { const m = deco(CYL, mat, [r, L, r], [x, y, z]); m.rotation.z = Math.PI / 2; return m; };
+  const bags = (x, z, w, d, h = COVER_H, base = 0) => addBox(x, z, w, d, h, { map:bagTex, base });
+  const floor = (tex, x0, z0, x1, z1) => { const f = floorPlane(tex, x0, z0, x1 - x0, z1 - z0); f.rotation.x = -Math.PI / 2; f.position.set((x0 + x1) / 2, 0.015, (z0 + z1) / 2); f.receiveShadow = true; level.add(f); };
+  const lampGlow = (x, y, z, col = '#ffe2a8') => { D(MT.dark, x, y + 0.06, z, 0.5, 0.06, 0.22); D(glow(col), x, y, z, 0.42, 0.05, 0.16); };
+  const label = (text, x, y, z, w, h, ry, fg = '#e6e0c8', bg = null) => {
+    const t = canvasTex2(512, 128, (g, W, H) => { if (bg) { g.fillStyle = bg; g.fillRect(0, 0, W, H); } else g.clearRect(0, 0, W, H); g.fillStyle = fg; g.font = `900 78px ${SIGN_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, W / 2, H / 2 + 4); });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map:t, transparent:!bg, roughness:0.8, polygonOffset:true, polygonOffsetFactor:-2 }));
+    m.position.set(x, y, z); m.rotation.y = ry; level.add(m);
+  };
+  // 벽 상자로 만든 건물: ops 는 벽에 낸 구멍 { side:'n'(-z) 's'(+z) 'w'(-x) 'e'(+x), a, b, kind:'door'|'win', top }
+  const building = o => {
+    const { x0, x1, z0, z1, h, tex } = o, t = o.t || 0.25, ops = o.ops || [];
+    for (const side of ['n', 's', 'w', 'e']) {
+      if ((o.skip || []).includes(side)) continue;
+      const alongX = side === 'n' || side === 's', fixed = side === 'n' ? z0 + t / 2 : side === 's' ? z1 - t / 2 : side === 'w' ? x0 + t / 2 : x1 - t / 2;
+      const A = alongX ? x0 : z0 + t, Bv = alongX ? x1 : z1 - t;
+      const seg = (a, b, base, hh) => { if (b - a < 0.05 || hh <= 0.02) return; const c = (a + b) / 2, L = b - a; if (alongX) addBox(c, fixed, L, t, hh, { map:tex, base }); else addBox(fixed, c, t, L, hh, { map:tex, base }); };
+      let cur = A;
+      for (const p of ops.filter(q => q.side === side).sort((q, r) => q.a - r.a)) {
+        seg(cur, p.a, 0, h);
+        if (p.kind === 'door') seg(p.a, p.b, p.top || 2.3, h - (p.top || 2.3));
+        else { seg(p.a, p.b, 0, 1.1); seg(p.a, p.b, 1.9, h - 1.9); const c = (p.a + p.b) / 2; if (alongX) D(MT.dark, c, 1.1, fixed, p.b - p.a, 0.05, t + 0.12); else D(MT.dark, fixed, 1.1, c, t + 0.12, 0.05, p.b - p.a); }
+        cur = p.b;
+      }
+      seg(cur, Bv, 0, h);
+    }
+    if (o.roof) addBox((x0 + x1) / 2, (z0 + z1) / 2, x1 - x0 + (o.ov || 0.35) * 2, z1 - z0 + (o.ov || 0.35) * 2, o.roofT || 0.15, { map:o.roof, base:h });
+    if (o.floorTex) floor(o.floorTex, x0 + t, z0 + t, x1 - t, z1 - t);
+  };
+  const table = (x, z, w, d, mat = MT.wood) => { D(mat, x, 0.88, z, w, 0.06, d); for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) D(MT.dark, x + a * (w / 2 - 0.06), 0.43, z + b * (d / 2 - 0.06), 0.05, 0.86, 0.05); solidDeco(x, z, w, d, 0.92); };
+  const drum = (x, z, mat) => { deco(CYL, mat, [0.29, 0.88, 0.29], [x, 0.44, z]); for (const y of [0.3, 0.6]) deco(CYL, MT.dark, [0.3, 0.03, 0.3], [x, y, z]); };
+  const drums = (x, z) => { const ms = [MT.drumB, MT.drumY, MT.drumR]; for (const [a, b] of [[-0.32, -0.32], [0.32, -0.32], [-0.32, 0.32], [0.32, 0.32]]) if (rnd() < 0.85) drum(x + a, z + b, ms[Math.floor(rnd() * 3)]); D(MT.wood, x, 0.03, z, 1.3, 0.06, 1.3); solidDeco(x, z, 1.3, 1.3, 0.9); };
+  const shelf = (x, z, w, d, h = 2.0) => {
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) D(MT.metal, x + a * (w / 2 - 0.03), h / 2, z + b * (d / 2 - 0.03), 0.05, h, 0.05);
+    for (let y = 0.15; y < h; y += 0.6) { D(MT.metal, x, y, z, w, 0.04, d); const n = Math.floor(rnd() * 4) + 1; for (let k = 0; k < n; k++) { const bw = 0.25 + rnd() * 0.3, along = w > d; D([MT.olive, MT.wood, MT.drumB, MT.mat][Math.floor(rnd() * 4)], x + (along ? (rnd() - 0.5) * (w - bw) : 0), y + 0.14, z + (along ? 0 : (rnd() - 0.5) * (d - bw)), along ? bw : d * 0.8, 0.24, along ? d * 0.8 : bw); } }
+    solidDeco(x, z, w, d, h);
+  };
+  const bunk = (x, z, alongZ) => {
+    const w = alongZ ? 0.9 : 2, d = alongZ ? 2 : 0.9;
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) D(MT.olive, x + a * (w / 2 - 0.03), 0.9, z + b * (d / 2 - 0.03), 0.05, 1.8, 0.05);
+    for (const y of [0.42, 1.38]) { D(MT.olive, x, y, z, w, 0.05, d); D(MT.mat, x, y + 0.08, z, w - 0.1, 0.12, d - 0.1); D(MT.mat, x + (alongZ ? 0 : -w / 2 + 0.3), y + 0.17, z + (alongZ ? -d / 2 + 0.3 : 0), alongZ ? 0.55 : 0.3, 0.08, alongZ ? 0.3 : 0.55); }
+    solidDeco(x, z, w, d, 1.8);
+  };
+  // ---- 초소: 판자 막사(창이 넓은 정면) + 앞쪽 모래주머니 참호 ----
+  const guardPost = (cz, side) => {
+    const xa = side < 0 ? -20.6 : 15.6, xb = side < 0 ? -15.6 : 20.6, front = side < 0 ? 'e' : 'w', z0 = cz - 2.5, z1 = cz + 2.5;
+    const dA = side < 0 ? -18.6 : 16.4;
+    building({ x0:xa, x1:xb, z0, z1, h:2.7, tex:plankTex, roof:corrTex, floorTex:plankTex,
+      ops:[{ side:front, a:cz - 1.8, b:cz + 1.8, kind:'win' }, { side:'s', a:dA, b:dA + 2.2, kind:'door' }, { side:'n', a:side < 0 ? -19 : 17, b:side < 0 ? -17 : 19, kind:'win' }] });
+    table(side * 19.9, cz + 1, 0.9, 1.8);
+    D(MT.olive, side * 19.9, 1.02, cz + 0.6, 0.4, 0.22, 0.3); D(glow('#7dffb0'), side * 19.68, 1.06, cz + 0.6, 0.02, 0.06, 0.18); // 무전기
+    D(MT.wood, side * 19.1, 0.45, cz + 1.4, 0.4, 0.05, 0.4); // 의자
+    lampGlow(side * 17.5, 2.62, cz);
+    bags(side * 13.5, cz, 0.7, 5.6); bags(side * 14.55, cz - 2.95, 1.4, 0.7);
+    // 철조망 말뚝
+    for (let k = 0; k < 4; k++) { D(MT.dark, side * 12.2, 0.5, cz - 3 + k * 2, 0.06, 1.0, 0.06); }
+    D(MT.dark, side * 12.2, 0.85, cz, 0.03, 0.03, 6); D(MT.dark, side * 12.2, 0.55, cz, 0.03, 0.03, 6);
+  };
+  // ---- 감시탑: 3m 높이 단상, 경사로, 모래주머니 흉벽, 차양 ----
+  const tower = (cz, side) => {
+    const xa = side < 0 ? -20.6 : 15.6, xb = side < 0 ? -15.6 : 20.6, cx = (xa + xb) / 2, z0 = cz - 2.5, z1 = cz + 2.5;
+    addPlatform({ minX:xa, maxX:xb, minZ:z0, maxZ:z1, h:3 }, T.conc, plankTex, '#ffffff');
+    addRamp(cx, z1, z1 + 6.5, 2.4, 3);
+    bags(side < 0 ? xb - 0.35 : xa + 0.35, cz, 0.7, 5, 1.1, 3); bags(cx, z0 + 0.35, 5, 0.7, 1.1, 3);
+    for (const [x, z] of [[xa + 0.1, z0 + 0.1], [xb - 0.1, z0 + 0.1], [xa + 0.1, z1 - 0.1], [xb - 0.1, z1 - 0.1]]) D(MT.dark, x, 4.2, z, 0.12, 2.4, 0.12);
+    addBox(cx, cz, 5.6, 5.6, 0.12, { map:corrTex, base:5.4 });
+    D(MT.dark, cx + side * 1.8, 4.9, z0 + 0.5, 0.5, 0.35, 0.5); D(glow('#fff4d8'), cx + side * 1.8 - side * 0.26, 4.9, z0 + 0.5, 0.02, 0.28, 0.4); // 탐조등
+  };
+  // ---- 정비 창고 (오른쪽, z 98~112): 골함석 벽, 말아 올린 큰 문, 작업대와 선반, 앞에 버려진 트럭 ----
+  {
+    building({ x0:11, x1:20.6, z0:98, z1:112, h:3.8, tex:corrTex, roof:corrTex, roofT:0.2, floorTex:T.conc,
+      ops:[{ side:'w', a:102, b:107, kind:'door', top:3.0 }, { side:'n', a:13, b:15, kind:'win' }, { side:'n', a:17, b:19, kind:'win' }, { side:'s', a:15.4, b:17.6, kind:'door' }] });
+    cylZ(MT.metal, 11.05, 3.25, 104.5, 0.28, 5.2); // 말아 올린 셔터
+    table(19.9, 100.5, 0.8, 3, MT.metal); D(MT.red, 19.9, 1.05, 99.8, 0.5, 0.25, 0.35); D(MT.dark, 19.9, 0.97, 101.3, 0.3, 0.1, 0.6);
+    shelf(19.95, 107.5, 0.7, 6, 2.2);
+    drums(12.2, 110.8);
+    crate(14.6, 100.2, 1.4);
+    // 엔진 거치대
+    D(MT.dark, 15.8, 0.5, 108.6, 1.2, 0.08, 1.0); D(MT.metal, 15.8, 0.85, 108.6, 0.8, 0.6, 0.7); solidDeco(15.8, 108.6, 1.2, 1.0, 1.15);
+    lampGlow(15.8, 3.72, 101); lampGlow(15.8, 3.72, 108);
+    label('정비 창고', 11 - 0.14, 3.4, 109.3, 2.6, 0.65, -Math.PI / 2, '#f2f0e8', '#3a4a35');
+    // 버려진 트럭 (엄폐물)
+    addBox(6.3, 115.3, 2.4, 2.2, 2.6, { color:'#56653f', metal:0.3 }); addBox(6.3, 118.9, 2.4, 4.8, 1.3, { color:'#4a5a37', metal:0.3 });
+    D(MT.glass, 6.3, 2.0, 114.18, 2.0, 0.8, 0.05); D(MT.dark, 6.3, 0.85, 114.1, 2.3, 0.4, 0.12);
+    for (const x of [5.05, 7.55]) D(MT.truck, x, 2.0, 118.9, 0.08, 1.2, 4.8);
+    for (const x of [5.0, 7.6]) for (const z of [115.4, 119.2, 120.6]) cylX(MT.rubber, x, 0.48, z, 0.48, 0.32);
+    D(MT.truck, 6.3, 2.5, 118.9, 2.5, 0.06, 4.9).rotation.z = 0.05; // 찌그러진 덮개
+  }
+  // ---- 통신 중계소 (오른쪽, z -205~-193): 철망 울타리, 장비 막사, 안테나 탑, 발전기 ----
+  {
+    const fence = (xa, za, xb, zb) => {
+      const L = Math.hypot(xb - xa, zb - za), geo = new THREE.PlaneGeometry(L, 2.4), uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * L / 0.6, uv.getY(i) * 2.4 / 0.6);
+      const m = new THREE.Mesh(geo, MT.fenceM); m.position.set((xa + xb) / 2, 1.2, (za + zb) / 2); m.rotation.y = Math.atan2(-(zb - za), xb - xa); level.add(m);
+      for (let k = 0; k <= Math.round(L / 2.5); k++) { const t = k / Math.round(L / 2.5); deco(CYL, MT.metal, [0.04, 2.6, 0.04], [xa + (xb - xa) * t, 1.3, za + (zb - za) * t]); }
+      D(MT.dark, (xa + xb) / 2, 2.55, (za + zb) / 2, Math.abs(xb - xa) || 0.03, 0.03, Math.abs(zb - za) || 0.03);
+      solidDeco((xa + xb) / 2, (za + zb) / 2, Math.abs(xb - xa) || 0.12, Math.abs(zb - za) || 0.12, 2.4);
+    };
+    fence(9, -205, 20.6, -205); fence(9, -193, 20.6, -193); fence(9, -205, 9, -201); fence(9, -197, 9, -193);
+    building({ x0:15, x1:20.6, z0:-204.6, z1:-199, h:2.7, tex:corrTex, roof:corrTex, floorTex:plankTex,
+      ops:[{ side:'w', a:-202.8, b:-200.6, kind:'door' }, { side:'s', a:16.4, b:19, kind:'win' }] });
+    addBox(20.0, -201.8, 0.6, 2.6, 1.1, { color:'#3a4046', metal:0.4 });
+    for (const z of [-202.7, -201.8, -200.9]) D(glow(['#5fd0ff', '#7dffb0', '#ffcf6a'][Math.floor(rnd() * 3)]), 19.69, 0.85, z, 0.02, 0.3, 0.6);
+    lampGlow(17.8, 2.62, -201.8);
+    // 안테나 탑
+    addBox(12, -203.2, 1.8, 1.8, 0.4, { map:T.conc });
+    for (const [a, b] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) D(MT.metal, 12 + a * (1 - 0.0), 10.4, -203.2 + b, 0.1, 20, 0.1);
+    for (let y = 1.5; y < 20; y += 2) { D(MT.metal, 12, y, -203.8, 1.25, 0.06, 0.06); D(MT.metal, 12, y, -202.6, 1.25, 0.06, 0.06); D(MT.metal, 11.4, y, -203.2, 0.06, 0.06, 1.25); D(MT.metal, 12.6, y, -203.2, 0.06, 0.06, 1.25); }
+    D(glow('#ff3a2a'), 12, 20.5, -203.2, 0.3, 0.3, 0.3);
+    { const dish = deco(CYL, MT.tank, [0.9, 0.15, 0.9], [11.2, 15, -203.2]); dish.rotation.z = Math.PI / 2 - 0.3; }
+    solidDeco(12, -203.2, 1.4, 1.4, 20);
+    // 발전기와 케이블 드럼
+    addBox(11.6, -196.4, 1.4, 2.4, 1.5, { color:'#56653f', metal:0.3 }); D(MT.dark, 11.6, 1.6, -196.9, 0.2, 0.3, 0.2); D(MT.dark, 10.88, 0.9, -196.4, 0.04, 0.6, 1.6);
+    { const dr = deco(CYL, MT.wood, [0.7, 0.6, 0.7], [14, 0.7, -194.4]); dr.rotation.x = Math.PI / 2; solidDeco(14, -194.4, 1.4, 0.6, 1.4); }
+    label('통신 중계소', 15 - 0.14, 2.3, -198.6, 2.4, 0.6, -Math.PI / 2, '#f2f0e8', '#2f4a5f');
+  }
+  // ---- 연료 저장소 (오른쪽, z -322~-299): 큰 연료 탱크 2기, 드럼 더미, 관리 부스 ----
+  {
+    for (const [x, len, r] of [[18.6, 10, 1.3], [14.2, 7, 1.1]]) {
+      cylZ(MT.tank, x, r + 0.4, -313, r, len);
+      for (const e of [-1, 1]) { const cap = deco(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), MT.tank, [r, 0.35, r], [x, r + 0.4, -313 + e * len / 2]); cap.rotation.x = e * Math.PI / 2; }
+      for (const z of [-313 - len / 3, -313 + len / 3]) D(MT.dark, x, 0.3, z, r * 1.6, 0.6, 0.4);
+      for (const z of [-313 - len / 2 + 0.6, -313, -313 + len / 2 - 0.6]) { const ring = deco(CYL, MT.dark, [r + 0.02, 0.12, r + 0.02], [x, r + 0.4, z]); ring.rotation.x = Math.PI / 2; }
+      solidDeco(x, -313, r * 2, len + 0.6, r * 2 + 0.4);
+    }
+    // 사다리와 경고 표시
+    for (let y = 0.4; y < 2.9; y += 0.35) D(MT.dark, 17.15, y, -309, 0.05, 0.04, 0.5);
+    label('인화성 물질', 17.25, 2.0, -315.5, 2.6, 0.62, -Math.PI / 2, '#151515', '#e2b21f');
+    label('인화성 물질', 13.04, 1.6, -313, 2.2, 0.55, -Math.PI / 2, '#151515', '#e2b21f');
+    drums(11, -320.5); drums(11.2, -305.5); drums(12.6, -305.5);
+    building({ x0:17.2, x1:20.6, z0:-303, z1:-299.6, h:2.6, tex:plankTex, roof:corrTex, floorTex:plankTex,
+      ops:[{ side:'w', a:-302.4, b:-300.2, kind:'door' }, { side:'n', a:18, b:20, kind:'win' }] });
+    table(20.05, -301.9, 0.8, 1.2); lampGlow(18.9, 2.52, -301.3);
+    bags(9.8, -313, 0.7, 4);
+  }
+  // ---- 중간 벙커 (왼쪽, x -21~-1.6, z 176~212): 콘크리트 반지하 벙커. 막사, 지휘실, 창고와 보안 금고 ----
+  {
+    const C = T.conc, H = 3.4;
+    floor(C, -20.4, 176.8, -2.4, 211.2);
+    addBox(-20.7, 194, 0.6, 36, H, { map:C });                 // 서쪽 (절벽 쪽)
+    addBox(-11.3, 176.4, 19.4, 0.8, H, { map:C });             // 북쪽
+    addBox(-11.3, 211.6, 19.4, 0.8, H, { map:C });             // 남쪽
+    // 동쪽 벽: 출입구 2곳 (막사, 지휘실)
+    const ew = (a, b) => addBox(-2, (a + b) / 2, 0.8, b - a, H, { map:C });
+    ew(176.8, 179.5); ew(181.9, 192); ew(194.4, 211.2);
+    for (const [a, b] of [[179.5, 181.9], [192, 194.4]]) { addBox(-2, (a + b) / 2, 0.8, b - a, H - 2.4, { map:C, base:2.4 }); D(MT.dark, -1.55, 2.45, (a + b) / 2, 0.1, 0.1, b - a + 0.3); D(glow('#ffcf6a'), -1.5, 2.65, (a + b) / 2, 0.08, 0.1, 0.5); }
+    // 안쪽 칸막이 벽
+    const iw = (z, gA, gB) => { addBox((-20.4 + gA) / 2, z, gA + 20.4, 0.4, H, { map:C }); addBox((gB - 2.4) / 2, z, -2.4 - gB, 0.4, H, { map:C }); addBox((gA + gB) / 2, z, gB - gA, 0.4, H - 2.4, { map:C, base:2.4 }); };
+    iw(188, -12.2, -9.8); iw(200, -7.6, -5.2);
+    // 지붕: 콘크리트판 위에 흙과 풀
+    addBox(-11.3, 194, 20.2, 36.8, 0.6, { map:C, base:H });
+    { const top = new THREE.Mesh(BOXG, new THREE.MeshStandardMaterial({ map:T.dirt, color:'#8d9a6a', roughness:1 })); top.scale.set(19.6, 0.5, 36); top.position.set(-11.6, H + 0.85, 194); top.castShadow = top.receiveShadow = true; level.add(top); }
+    // 위장망: 지붕 끝에서 출입구 쪽으로 늘어뜨림
+    { const geo = new THREE.BufferGeometry(), x0 = -1.6, x1 = 2.6, y0 = H + 0.5, y1 = 2.65, za = 177, zb = 197.5;
+      geo.setAttribute('position', new THREE.Float32BufferAttribute([x0, y0, za, x1, y1, za, x1, y1, zb, x0, y0, zb], 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 2, 0, 2, 10, 0, 10], 2)); geo.setIndex([0, 1, 2, 0, 2, 3]); geo.computeVertexNormals();
+      const net = new THREE.Mesh(geo, MT.netM); net.castShadow = true; level.add(net);
+      for (const z of [177.3, 187.2, 197.2]) D(MT.dark, 2.6, 1.32, z, 0.08, 2.64, 0.08); }
+    // 출입구 앞 방폭벽 (안이 곧장 들여다보이지 않게)
+    addBox(1.4, 180.7, 0.8, 5, 2.2, { map:C }); addBox(1.4, 193.2, 0.8, 5, 2.2, { map:C });
+    bags(0.6, 174.9, 3.2, 0.7); bags(0.6, 213.1, 3.2, 0.7);
+    label('제7 방공호', -1.56, 2.95, 186.8, 3.2, 0.8, Math.PI / 2, '#e8e2c8');
+    label('관계자 외 출입 금지', -1.56, 1.8, 186.8, 2.6, 0.45, Math.PI / 2, '#ffffff', '#a8231a');
+    // 막사: 2층 침대, 사물함, 탁자
+    for (const z of [178.2, 181.2, 184.2]) bunk(-19.85, z, true);
+    addBox(-14.5, 177.1, 2.6, 0.55, 1.9, { color:'#56604a', metal:0.4 });
+    for (let k = 0; k < 4; k++) D(MT.dark, -15.47 + k * 0.65, 1.0, 177.39, 0.02, 1.7, 0.02);
+    table(-11.5, 183, 2, 1); D(MT.olive, -11.8, 0.98, 183.1, 0.4, 0.12, 0.3);
+    // 지휘실: 작전 탁자(빛나는 지도), 통신 장비, 총기 거치대
+    table(-12, 194, 3, 1.6, MT.dark); D(glow('#3fbf8f'), -12, 0.915, 194, 2.7, 0.01, 1.35);
+    addBox(-19.9, 193.5, 0.8, 6, 1.1, { color:'#33393e', metal:0.4 });
+    for (let k = 0; k < 4; k++) { D(glow(['#5fd0ff', '#7dffb0', '#ffcf6a', '#5fd0ff'][k]), -19.48, 1.4, 191.2 + k * 1.5, 0.03, 0.45, 0.8); D(MT.dark, -19.6, 1.4, 191.2 + k * 1.5, 0.2, 0.55, 0.95); }
+    addBox(-16, 199.45, 4, 0.5, 1.9, { color:'#3d4338', metal:0.3 });
+    for (let k = 0; k < 6; k++) D(MT.dark, -17.6 + k * 0.65, 1.2, 199.12, 0.08, 1.1, 0.1);
+    // 창고 동쪽: 상자와 선반
+    crate(-9.5, 209.8); crate(-6.8, 210.1, 1.4); shelf(-3.1, 206, 0.7, 6, 2.0);
+    // 조명
+    for (const [x, z] of [[-11, 182], [-11, 194], [-8, 205.5]]) { lampGlow(x, H - 0.08, z); addPointLight('#ffd9a0', 0.9, 16, x, H - 0.4, z); }
+    // 보안 금고 (카드키)
+    addVault({ h:H, cx:-17.2, cz:205.7, rect:[-20.4, -14, 200.2, 211.2],
+      walls:[[-14, 202.4, 0.4, 4.4], [-14, 208.9, 0.4, 4.6]], gate:[-14, 205.6, 0.3, 2], loot:[[-18.5, 203.2], [-18.5, 208.6]], table:'vault', n:4 });
+  }
+  // 초소와 감시탑
+  guardPost(518.5, -1); guardPost(279, 1); guardPost(-120, 1); guardPost(-501, 1);
+  tower(24.3, -1); // 단상 끝이 길찾기 칸 중심(.5)에 걸리지 않게 0.3 비켜 둠
 }
 const MAPS = {
   yard: {
@@ -2239,6 +2478,7 @@ const MAPS = {
       // 4구간: 3거점 ~ 끝, 탈출구 3
       barrier(X(0), Z(-225), 8, 0.8, 1.3); crate(X(-11), Z(-235)); crate(X(11), Z(-241));
       barrier(X(-6), Z(-258), 8, 0.8, 1.3); pillar(X(10), Z(-268));
+      canyonFacilities();
       // 추가 엄폐물: 통로 구간마다 약 16m 간격으로 배치. 고정된 난수라 매번 같은 자리에 놓임
       // 기존 구조물과는 2.2m 이상, 전리품 상자, 탈출구, 미니게임 스폰 지점과는 3m 이상 띄움
       { let seed = 20261006; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
@@ -4335,7 +4575,13 @@ const RAID = {
           [CX(-11, -12), CZ(-12), 'tech'], [CX(11, -29), CZ(-29), 'weapon'], [CX(-12, -33), CZ(-33), 'docs'],
           [CX(-8, -72), CZ(-72), 'misc'], [CX(6, -111.5), CZ(-111.5), 'tech'], [CX(-11, -132.5), CZ(-132.5), 'weapon'],
           [CX(-11, -182), CZ(-182), 'tech'], [CX(11, -199), CZ(-199), 'vault'], [CX(-11, -199), CZ(-199), 'weapon'],
-          [CX(-10, -230), CZ(-230), 'tech'], [CX(8, -262), CZ(-262), 'misc']],
+          [CX(-10, -230), CZ(-230), 'tech'], [CX(8, -262), CZ(-262), 'misc'],
+          // 새 시설: 초소 4곳, 감시탑, 정비 창고, 통신 중계소, 연료 저장소, 중간 벙커
+          [-17.3, 517.3, 'med'], [17.3, 277.8, 'tech'], [17.3, -121.2, 'med'], [17.3, -502.2, 'misc'], [-19.2, 24.3, 'weapon', 3],
+          [18.8, 103.3, 'weapon'], [12.5, 99.5, 'misc'], [16.3, -203.7, 'tech'], [18.5, -200.2, 'docs'], [19.7, -300.5, 'misc'], [11.5, -313, 'med'],
+          [-16.8, 186.6, 'med'], [-4, 177.6, 'misc'], [-16, 198.4, 'weapon'], [-4.5, 189.4, 'tech'], [-12.6, 201.3, 'docs'], [-5.2, 207.5, 'tech']],
+    // 중간 벙커 경비병 (정예)
+    guards:[['grunt', -11, 182, 'elite'], ['grunt', -7, 195, 'elite'], ['grunt', 3.2, 187, 'elite'], ['brute', -9, 205, 'elite']],
     // 탈출 지점: 출발 위치에서 250m 이상 떨어진 곳 + 가운데 거점 안의 공용 탈출구
     ext:[{ id:'e1', name:'1번 배수로', x:CX(-11, 50), z:CZ(50) }, { id:'e2', name:'2번 정비 통로', x:CX(-11, -145), z:CZ(-145) }, { id:'e3', name:'협곡 끝 출구', x:CX(0, -292), z:CZ(-292) },
          { id:'e4', name:'남쪽 고지대 승강기', x:-12, z:CZ(295), y:3.2 }, { id:'c', name:'중앙 거점 환기구', x:15, z:CZ(-20) + 4, shared:true }],
@@ -5142,6 +5388,8 @@ function beginRaid() {
   raid.exts.forEach(addExtract);
   placeEnemies(cfg);
   if (cfg.bosses) cfg.bosses.forEach(spawnBossGroup);
+  // 고정 경비병: 자리를 지키다가 일정 거리 이상 쫓아가지 않음
+  if (cfg.guards) for (const [t, x, z, kind] of cfg.guards) { const q = navSpot(x, z), e = spawnEnemyAt(t, q[0], q[1], false); e.zone = 7; e.leash = 18; e.guardZone = true; if (kind === 'elite') makeElite(e); }
   if (cfg.boss) {
     // 보스와 호위 2명을 가장 가까운 걸을 수 있는 자리에 배치
     const by = cfg.boss[2] || 0, spot = (x, z) => navSpot(x, z, by);
@@ -5483,7 +5731,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.15';
+const GAME_VER = 'v1.2.16';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
