@@ -124,6 +124,15 @@ body:not(.is-raid) #consum{ display:none; }
 .credits{ font-size:15px; color:var(--dim); margin:0 0 1.2em; }
 .credits b{ color:var(--amber); font-size:22px; margin:0 6px; }
 .rows{ display:grid; gap:4px; margin:0 0 1.3em; }
+.combatlog{ margin:0 0 1.3em; }
+.combatlog h3{ margin:0 0 6px; font-size:14px; color:var(--amber); letter-spacing:.06em; }
+.combatlog .stats{ display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:4px; margin:0 0 8px; }
+.combatlog .stats div{ background:rgba(255,255,255,.04); padding:6px 8px; font-size:12px; color:var(--dim); }
+.combatlog .stats b{ display:block; font-size:17px; color:var(--ink); font-family:"Chakra Petch",ui-monospace,monospace; }
+.combatlog .kl{ display:grid; gap:2px; max-height:180px; overflow-y:auto; font-size:12.5px; }
+.combatlog .kl div{ display:grid; grid-template-columns:3.4em 1fr auto auto; gap:8px; padding:3px 8px; background:rgba(255,255,255,.03); }
+.combatlog .kl .tm{ color:var(--dim); font-family:ui-monospace,monospace; }
+.combatlog .kl .hs{ color:#ff8a5c; font-weight:700; }
 .row{ display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center; font-size:13px; padding:5px 8px; background:rgba(255,255,255,.03); }
 .row .v{ color:var(--dim); font-family:"Chakra Petch",ui-monospace,monospace; }
 .row.gain{ grid-template-columns:1fr auto; }
@@ -433,6 +442,7 @@ body.is-raid .waveonly{ display:none; }
       <button class="tb sm" data-t="laser">레이저/라이트</button>
       <button class="tb sm raidonly" data-t="exits">탈출구</button>
       <button class="tb sm" data-t="crouch">앉기</button>
+      <button class="tb sm" data-t="prone">엎드리기</button>
     </div>
   </div>
 
@@ -463,6 +473,7 @@ body.is-raid .waveonly{ display:none; }
           <dt>Space</dt><dd>점프 (낮은 장애물 위로 올라갈 수 있음)</dd>
           <dt>R</dt><dd>재장전</dd>
           <dt>C (누르는 동안)</dt><dd>앉기 (낮은 엄폐물 뒤에 숨고 덜 발견됨. 이동은 느려지며 달리거나 점프하면 일어섬)</dd>
+          <dt>Z</dt><dd>엎드리기, 일어서기 (가장 덜 발견되고 반동이 줄어듦. 아주 느리게 기어 다니며 달리기, 점프, 앉기를 하면 일어섬)</dd>
           <dt>Q / E</dt><dd>누르고 있는 동안 왼쪽, 오른쪽으로 몸 기울이기 (엄폐 사격)</dd>
           <dt>F / Tab / H</dt><dd>상자 열기, 문 열기 / 가방 보기 / 치료 키트 사용</dd>
           <dt>G</dt><dd>수류탄 던지기, 2초 뒤 폭발</dd>
@@ -557,6 +568,7 @@ body.is-raid .waveonly{ display:none; }
       <h1 id="raidTitle">탈출 성공</h1>
       <p id="raidSub"></p>
       <div id="raidList" class="rows"></div>
+      <div id="raidLog" class="combatlog"></div>
       <button class="primary" id="raidBack">은신처로</button>
     </div>
   </div>
@@ -2105,7 +2117,17 @@ let crouch = false, crouchT = 0;
 const CROUCH_DROP = 0.65;
 function setCrouch(v) {
   if (state !== 'play' || P.downed) return;
+  if (v && prone) setProne(false);
   crouch = v; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.toggle('lit', crouch));
+}
+// 엎드리기: Z 로 켜고 끔. 눈높이 0.45m, 아주 느리게 기어 다니고 달릴 수 없음. 가장 덜 발견되고 반동이 줄어듦
+// 점프, 달리기, 앉기를 하면 일어남
+let prone = false, proneT = 0;
+const PRONE_DROP = 1.25;
+function setProne(v) {
+  if (state !== 'play' || P.downed) return;
+  if (v && crouch) { crouch = false; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.remove('lit')); }
+  prone = v; document.querySelectorAll('.tb[data-t="prone"]').forEach(b => b.classList.toggle('lit', prone));
 }
 let leanT = 0, touchLean = 0;
 const EYE = new THREE.Vector3();
@@ -2130,8 +2152,8 @@ function resetGame() {
   enemies = []; shots = []; pickups = []; parts = []; tracers = []; nades = []; frags = []; rings = []; shakeAmt = 0; fragCd = 0;
   { const S0 = mode === 'wave' ? (WAVE_START || BASE_START || START) : START; P.pos.set(S0.x, S0.y, S0.z); P.vy = 0; P.yaw = S0.yaw; } P.pitch = 0; P.maxHp = 100; P.arMax = 100; P.arAbs = 0.5; P.spd = 1; P.adsMul = 1; P.repMul = 1; P.healMul = 1; P.defMul = 1; P.hp = 100; P.ar = 25; P.onGround = true; P.calm = 0;
   ammo = WEAPONS.map(w => ({ mag:w.mag, res:w.reserve }));
-  slot = Math.max(0, loadout.findIndex(w => w)); weapon = loadout[slot]; aiming = false; aimT = 0; fireCd = 0; recoilPitch = 0; recoilYaw = 0; leanT = 0; touchLean = 0; reloading = 0; switchT = 0; recoil = 0; kick = 0; dmgFlash = 0; crouch = false; crouchT = 0; P.downed = false; $('downBox').hidden = true;
-  document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.remove('lit'));
+  slot = Math.max(0, loadout.findIndex(w => w)); weapon = loadout[slot]; aiming = false; aimT = 0; fireCd = 0; recoilPitch = 0; recoilYaw = 0; leanT = 0; touchLean = 0; reloading = 0; switchT = 0; recoil = 0; kick = 0; dmgFlash = 0; crouch = false; crouchT = 0; prone = false; proneT = 0; P.downed = false; $('downBox').hidden = true;
+  document.querySelectorAll('.tb[data-t="crouch"], .tb[data-t="prone"]').forEach(b => b.classList.remove('lit'));
   score = 0; kills = 0; wave = 0; waveState = 'break'; waveT = 2.5; queue = []; spawnT = 0;
   refreshSlots();
   setWeapon(slot, true);
@@ -2150,6 +2172,7 @@ addEventListener('keydown', e => {
   if (state !== 'play') return;
   keys[e.code] = true;
   if (e.code === 'Space') { e.preventDefault(); jump(); }
+  if (e.code === 'KeyZ' && !e.repeat) setProne(!prone);
   if (e.code === 'KeyR') startReload();
   if (e.code === 'Digit1') setWeapon(0); if (e.code === 'Digit2') setWeapon(1); if (e.code === 'Digit3') setWeapon(2);
   if (e.code === 'Digit4' && mode === 'raid') useMed();
@@ -2266,6 +2289,7 @@ if (isTouch) {
       if (t === 'laser') toggleLaser();
       if (t === 'exits') showExits();
       if (t === 'crouch') setCrouch(!crouch);
+      if (t === 'prone') setProne(!prone);
       if (t === 'use' && mode === 'raid') interact();
       if (t === 'heal' && mode === 'raid') useMed();
       if (t === 'frag' && mode === 'raid') throwFrag();
@@ -2388,7 +2412,7 @@ function fire() {
   recoil = Math.min(recoil + w.recoil, 0.3); kick = w.recoil;
   // 반동은 별도 값으로 쌓고 시간이 지나면 원래 조준점으로 복귀
   // 반동: 한 발마다 조준점이 위로 튀고 좌우로 흔들림 (v1.2.2 에서 약 1.8배 강화)
-  recoilPitch = Math.min(0.45, recoilPitch + w.recoil * 0.4);
+  recoilPitch = Math.min(0.45, recoilPitch + w.recoil * 0.4 * (1 - proneT * 0.4)); // 엎드리면 반동 40% 감소
   recoilYaw += rand(-1, 1) * w.recoil * (w.auto ? 0.09 : 0.045);
   shotAgo = 0;
   flash.visible = true; flash.rotation.z = Math.random() * 3; flashT = 0.05;
@@ -2397,6 +2421,8 @@ function fire() {
   flashLight.position.copy(P.pos).addScaledVector(fwd, 0.8); flashLight.intensity = 2.2;
   if (NET.inRaid) netSend({ t:'e', k:'shot', d:[weapon] });
   const targets = worldMeshes.concat(enemies.map(e => e.g), mateMeshes());
+  hitCtx = { w:w.name, head:false };
+  if (raid && raid.log) raid.log.shots++;
   let hitAny = false, killedAny = false, headAny = false, visorAny = false, coreAny = false, shieldAny = false;
   const right = tmpV2.set(1, 0, 0).applyQuaternion(camera.quaternion);
   const muzzle = EYE.clone().addScaledVector(fwd, 0.7).addScaledVector(right, 0.22).add(new THREE.Vector3(0, -0.18, 0));
@@ -2424,12 +2450,13 @@ function fire() {
         const pm = partMult(e, h.object, w.headMul || 1); if (pm > 1) coreAny = true; if (pm < 0.2) shieldAny = true;
         // 파밍 모드 레일건: 머리는 무엇이든 한 방, 몸통과 팔다리는 일반 적 한 방, 보스급은 최대 체력의 1/4
         const railKill = mode === 'raid' ? (hs || !e.isBoss ? e.hp + 1 : e.maxHp * 0.25) : 0;
+        hitCtx.head = hs;
         if (damageEnemy(e, railKill || (hs ? headDamage(e, w.dmg, w.headMul || 1) : w.dmg * pm) * ammoMult(e, hs), fwd)) killedAny = true;
       } else { end = h.point; burst(h.point, '#9ff3ff', 10, 4); break; }
     }
     addBeam(muzzle, end);
     shakeAmt = Math.max(shakeAmt, 0.06);
-    if (hitAny) { showHit(killedAny); SND.play(headAny ? 'head' : visorAny ? 'visor' : 'hit'); }
+    if (hitAny) { showHit(killedAny); SND.play(headAny ? 'head' : visorAny ? 'visor' : 'hit'); if (raid && raid.log) raid.log.hitShots++; }
     
     firePressed = false; return;
   }
@@ -2455,10 +2482,11 @@ function fire() {
       const hs = !!h.object.userData.head; if (hs) { if (e.type === 'brute' || e.isBoss) visorAny = true; else headAny = true; }
       const pm = partMult(e, h.object, w.headMul || 1); if (pm > 1) coreAny = true; if (pm < 0.2) shieldAny = true;
       const fall = (mode === 'raid' && weapon === 0 && h.distance > 25 ? 0.6 : 1) * (mode === 'raid' && weapon === 0 && (e.type === 'brute' || e.isBoss) ? 0.5 : 1);
+      hitCtx.head = hs;
       if (damageEnemy(e, (hs ? headDamage(e, w.dmg, w.headMul || 1) * (fall < 1 && e.type !== 'grunt' && e.type !== 'drone' ? fall : 1) : w.dmg * fall * pm) * ammoMult(e, hs), dir)) killedAny = true;
     } else burst(h.point, '#d8c9a8', 3, 2.5);
   }
-  if (hitAny) { showHit(killedAny); SND.play(headAny ? 'head' : visorAny ? 'visor' : 'hit'); }
+  if (hitAny) { showHit(killedAny); SND.play(headAny ? 'head' : visorAny ? 'visor' : 'hit'); if (raid && raid.log) raid.log.hitShots++; }
   
   firePressed = false;
 }
@@ -2489,6 +2517,7 @@ function explode(p, dmgIn, Rin, fromNet) {
   ring.position.copy(p); ring.scale.setScalar(0.3); scene.add(ring); rings.push({ m:ring, t:0.3 });
   const R = Rin || 5, dmg = dmgIn || WEAPONS[3].dmg;
   let hit = false, kill = false;
+  hitCtx = { w:dmgIn === FRAG_DMG ? '수류탄' : '유탄', head:false };
   for (const e of enemies) {
     if (e.dead) continue;
     const c = e.g.position.clone(); c.y += e.type === 'drone' ? 0 : e.type === 'bguard' ? 1.5 : e.type === 'snp' ? 1.2 : e.type === 'jugg' ? 2.3 : e.type === 'boss' ? 2.2 : e.type === 'brute' ? 1.6 : 1;
@@ -2565,7 +2594,7 @@ let flashT = 0, hitT = 0;
 function headDamage(e, base, hm = 1) {
   const bf = 1 + (hm - 1) * 0.27;
   return e.type === 'jugg' ? Math.max(base * 1.5 * bf, e.maxHp * 0.04)
-       : (e.type === 'boss' || e.type === 'snp' || e.type === 'bguard') ? Math.max(base * 2.5 * bf, e.maxHp * 0.1)
+       : (e.type === 'boss' || (e.type === 'snp' && !e.rsnp) || e.type === 'bguard') ? Math.max(base * 2.5 * bf, e.maxHp * 0.1)
        : e.type === 'brute' ? Math.max(base * hm, e.maxHp * 0.45)
        : e.hp + 1;
 }
@@ -2622,45 +2651,89 @@ const ETYPES = {
   snp:   { hp:900, speed:2.5, r:0.5, score:4000, col:'#3a4a2a' },
   bguard:{ hp:1300, speed:3.2, r:0.9, score:4000, col:'#3a3f46' }
 };
+// ---------- 사람형 모형 공용 부품 ----------
+// 디테일 부품은 그림자를 만들지 않음 (부품이 많아져도 덜 무겁게)
+function dpart(parent, geo, mat, sz, p, r) { const m = part(parent, geo, mat, sz, p); m.castShadow = false; if (r) m.rotation.set(r[0], r[1], r[2]); return m; }
+// 관절 묶음: 위쪽 끝(엉덩이, 어깨)이 축. 안에 여러 부품을 달 수 있음
+function jointG(parent, x, y, z) { const pv = new THREE.Group(); pv.position.set(x, y, z); pv.userData.pivot = true; parent.add(pv); return pv; }
+// 사람형 몸: 군화, 정강이, 무릎 보호대, 허벅지 / 몸통, 방탄 조끼, 탄창 주머니, 벨트, 배낭 / 위팔, 어깨 패드, 아래팔, 장갑 / 얼굴, 헬멧, 고글, 헤드셋
+// f: 정면 방향 (적은 +Z 쪽이 정면이라 1, 플레이어 모형은 -Z 쪽이 정면이라 -1)
+function buildHuman(g, o) {
+  const f = o.fwd, M = o.mats, legs = [], arms = [];
+  for (const sx of [-1, 1]) {
+    const L = jointG(g, sx * o.legX, o.hip, 0), lw = o.legW, lh = o.hip;
+    part(L, BOX, M.uni, [lw, lh * 0.56, lw * 1.06], [0, -lh * 0.28, 0]);
+    dpart(L, BOX, M.dark, [lw * 0.9, lh * 0.44, lw * 0.95], [0, -lh * 0.74, 0]);
+    dpart(L, BOX, M.armor, [lw * 0.82, lh * 0.15, lw * 0.32], [0, -lh * 0.54, f * lw * 0.56]);
+    dpart(L, BOX, M.boot, [lw * 1.06, lh * 0.12, lw * 1.5], [0, -lh * 0.94, f * lw * 0.22]);
+    legs.push(L);
+  }
+  const [tw, th, td] = o.torso, ty = o.torsoY;
+  part(g, BOX, M.uni, [tw * 0.92, th, td * 0.9], [0, ty, 0]);
+  dpart(g, BOX, M.armor, [tw, th * 0.64, td], [0, ty + th * 0.1, 0]);
+  for (const k of [-1, 0, 1]) dpart(g, BOX, M.pouch || M.dark, [tw * 0.2, th * 0.22, td * 0.2], [k * tw * 0.26, ty - th * 0.02, f * td * 0.58]);
+  dpart(g, BOX, M.dark, [tw * 0.96, th * 0.1, td * 0.96], [0, ty - th * 0.46, 0]);
+  if (o.pack) { dpart(g, BOX, M.dark, [tw * 0.6, th * 0.62, td * 0.42], [0, ty + th * 0.06, -f * td * 0.66]); dpart(g, BOX, M.armor, [tw * 0.06, th * 0.5, td * 0.06], [tw * 0.22, ty + th * 0.55, -f * td * 0.8]); }
+  dpart(g, BOX, M.uni, [tw * 0.42, th * 0.12, td * 0.55], [0, ty + th * 0.55, 0]);
+  for (const sx of [-1, 1]) {
+    const A = jointG(g, sx * o.armX, o.armY, f * (o.armZ || 0)), al = o.armL, aw = o.armW;
+    part(A, BOX, M.uni, [aw, al * 0.52, aw * 1.08], [0, -al * 0.26, 0]);
+    dpart(A, BOX, M.armor, [aw * 1.22, al * 0.2, aw * 1.25], [0, -al * 0.08, 0]);
+    dpart(A, BOX, M.dark, [aw * 0.9, al * 0.44, aw * 0.98], [0, -al * 0.72, 0]);
+    dpart(A, BOX, M.glove, [aw * 0.86, al * 0.13, aw * 0.94], [0, -al * 0.97, 0]);
+    arms.push(A);
+  }
+  const hy = o.headY, hs = o.headS, H = [];
+  H.push(part(g, BOX, M.skin, [hs * 0.8, hs * 0.86, hs * 0.84], [0, hy - hs * 0.06, 0]));
+  if (o.helmet !== false) {
+    H.push(dpart(g, SPH, M.helm, [hs * 0.56, hs * 0.44, hs * 0.58], [0, hy + hs * 0.16, -f * hs * 0.02]));
+    H.push(dpart(g, BOX, M.helm, [hs * 1.08, hs * 0.08, hs * 1.12], [0, hy + hs * 0.06, -f * hs * 0.04]));
+  }
+  H.push(dpart(g, BOX, M.eye, [hs * 0.72, hs * 0.17, hs * 0.08], [0, hy + hs * 0.02, f * hs * 0.43]));
+  for (const sx of [-1, 1]) H.push(dpart(g, BOX, M.dark, [hs * 0.12, hs * 0.3, hs * 0.3], [sx * hs * 0.45, hy - hs * 0.02, 0]));
+  for (const h of H) h.userData.head = true;
+  return { legs, arms, head:H };
+}
 function buildGrunt(e) {
-  const g = new THREE.Group(), body = std('#7a3b2a'), dark = std('#4a2419'), eye = glow('#ff5a3c');
-  e.legs = [part(g, BOX, dark, [0.28, 0.8, 0.3], [-0.2, 0.4, 0]), part(g, BOX, dark, [0.28, 0.8, 0.3], [0.2, 0.4, 0])];
-  part(g, BOX, body, [0.82, 0.82, 0.52], [0, 1.22, 0]);
-  part(g, BOX, dark, [0.5, 0.45, 0.5], [0, 1.86, 0]).userData.head = true;
-  part(g, BOX, eye, [0.38, 0.08, 0.05], [0, 1.9, 0.26]).userData.head = true;
-  e.arms = [part(g, BOX, body, [0.2, 0.72, 0.24], [-0.53, 1.15, 0.08]), part(g, BOX, body, [0.2, 0.72, 0.24], [0.53, 1.15, 0.08])];
-  e.gunParts = [part(g, BOX, std('#2d3036', { metalness:0.6 }), [0.12, 0.14, 0.75], [0.3, 1.25, 0.55])];
-  e.mats = [body, dark]; return g;
+  // 보병: 붉은 갈색 전투복, 헬멧과 붉은 고글, 방탄 조끼와 배낭
+  const g = new THREE.Group(), body = std('#7a3b2a'), dark = std('#3e2018'), armor = std('#4f3326', { roughness:0.85 }), boot = std('#1c1210'), helm = std('#3b2a22', { roughness:0.5, metalness:0.3 }), skin = std('#2a1d18');
+  const b = buildHuman(g, { fwd:1, hip:0.8, legX:0.2, legW:0.27, torso:[0.8, 0.8, 0.5], torsoY:1.22, headY:1.86, headS:0.5, armX:0.53, armY:1.51, armZ:0.08, armL:0.72, armW:0.2, pack:true,
+    mats:{ uni:body, dark, armor, boot, glove:boot, helm, skin, eye:glow('#ff5a3c') } });
+  e.legs = b.legs; e.arms = b.arms;
+  e.gunParts = [part(g, BOX, std('#2d3036', { metalness:0.6 }), [0.12, 0.14, 0.75], [0.3, 1.25, 0.55]), dpart(g, BOX, std('#1d1f23'), [0.08, 0.22, 0.12], [0.3, 1.1, 0.48]), dpart(g, BOX, std('#1d1f23'), [0.06, 0.07, 0.2], [0.3, 1.36, 0.42])];
+  e.mats = [body, dark, armor, boot, helm, skin]; return g;
 }
 function buildSniper(e) {
-  // 저격수: 위장망을 두른 가는 체형, 긴 저격총, 붉은 조준경
-  const g = new THREE.Group(), body = std('#3a4a2a'), dark = std('#1f261a'), net = std('#5a6b3a', { roughness:1 });
-  e.legs = [part(g, BOX, dark, [0.24, 0.85, 0.28], [-0.17, 0.42, 0]), part(g, BOX, dark, [0.24, 0.85, 0.28], [0.17, 0.42, 0])];
-  part(g, BOX, body, [0.66, 0.8, 0.42], [0, 1.25, 0]);
-  part(g, BOX, net, [0.8, 0.5, 0.55], [0, 1.45, -0.05]);
-  part(g, BOX, dark, [0.42, 0.42, 0.44], [0, 1.88, 0]).userData.head = true;
-  part(g, BOX, net, [0.5, 0.14, 0.5], [0, 2.12, 0]).userData.head = true;
-  part(g, BOX, glow('#ff3a2e'), [0.3, 0.06, 0.05], [0, 1.92, 0.23]).userData.head = true;
-  e.arms = [part(g, BOX, body, [0.18, 0.68, 0.22], [-0.44, 1.18, 0.1]), part(g, BOX, body, [0.18, 0.68, 0.22], [0.44, 1.18, 0.1])];
+  // 저격수: 위장망(길리) 두건과 망토, 가는 체형, 긴 저격총, 붉은 조준경
+  const g = new THREE.Group(), body = std('#3a4a2a'), dark = std('#1f261a'), net = std('#5a6b3a', { roughness:1 }), boot = std('#14180f'), skin = std('#26301c');
+  const b = buildHuman(g, { fwd:1, hip:0.85, legX:0.17, legW:0.23, torso:[0.64, 0.8, 0.42], torsoY:1.25, headY:1.88, headS:0.44, armX:0.44, armY:1.52, armZ:0.1, armL:0.68, armW:0.18, helmet:false,
+    mats:{ uni:body, dark, armor:net, pouch:dark, boot, glove:boot, helm:net, skin, eye:glow('#ff3a2e') } });
+  e.legs = b.legs; e.arms = b.arms;
+  // 길리 망토와 두건 (술 장식처럼 늘어진 조각)
+  dpart(g, BOX, net, [0.82, 0.5, 0.56], [0, 1.45, -0.06]);
+  for (let k = 0; k < 6; k++) dpart(g, BOX, net, [0.1, 0.32 + (k % 3) * 0.08, 0.04], [-0.3 + k * 0.12, 1.12, -0.32], [0.2, 0, (k - 2.5) * 0.06]);
+  const hood = dpart(g, BOX, net, [0.52, 0.16, 0.52], [0, 2.12, -0.02]); hood.userData.head = true;
+  const hood2 = dpart(g, BOX, net, [0.56, 0.36, 0.2], [0, 1.95, -0.22]); hood2.userData.head = true;
   e.gunParts = [part(g, BOX, std('#2b3035', { metalness:0.6 }), [0.09, 0.12, 1.5], [0.25, 1.35, 0.7]),
     part(g, BOX, std('#1b1d21'), [0.1, 0.1, 0.4], [0.25, 1.5, 0.5]),
-    part(g, BOX, glow('#ff3a2e'), [0.08, 0.08, 0.02], [0.25, 1.5, 0.71])];
-  e.mats = [body, dark]; return g;
+    part(g, BOX, glow('#ff3a2e'), [0.08, 0.08, 0.02], [0.25, 1.5, 0.71]),
+    dpart(g, BOX, std('#1b1d21'), [0.1, 0.18, 0.3], [0.25, 1.28, 0.12]),
+    dpart(g, BOX, std('#1b1d21'), [0.03, 0.22, 0.03], [0.21, 1.2, 1.25], [0.4, 0, 0.2]), dpart(g, BOX, std('#1b1d21'), [0.03, 0.22, 0.03], [0.29, 1.2, 1.25], [0.4, 0, -0.2])];
+  e.mats = [body, dark, net, boot, skin]; return g;
 }
 function buildBGuard(e) {
   // 보스가드: 두꺼운 장갑과 큰 방패 (방패 정면은 피해 10%만), 방패 위 머리가 약점
-  const g = new THREE.Group(), body = std('#3a3f46', { metalness:0.6 }), dark = std('#1b1d21', { metalness:0.6 }), plate = std('#c9a21a', { metalness:0.5 });
-  e.legs = [part(g, BOX, dark, [0.48, 1.0, 0.52], [-0.35, 0.5, 0]), part(g, BOX, dark, [0.48, 1.0, 0.52], [0.35, 0.5, 0])];
-  part(g, BOX, body, [1.4, 1.1, 0.9], [0, 1.55, 0]);
-  part(g, BOX, plate, [0.5, 0.25, 0.95], [-0.85, 2.05, 0]); part(g, BOX, plate, [0.5, 0.25, 0.95], [0.85, 2.05, 0]);
-  part(g, BOX, dark, [0.6, 0.5, 0.58], [0, 2.38, 0.05]).userData.head = true;
-  part(g, BOX, glow('#ffcf6a'), [0.46, 0.08, 0.05], [0, 2.42, 0.35]).userData.head = true;
-  e.arms = [part(g, BOX, body, [0.35, 1.0, 0.42], [-0.9, 1.45, 0.1]), part(g, BOX, body, [0.35, 1.0, 0.42], [0.9, 1.45, 0.1])];
+  const g = new THREE.Group(), body = std('#3a3f46', { metalness:0.6 }), dark = std('#1b1d21', { metalness:0.6 }), plate = std('#c9a21a', { metalness:0.5 }), helm = std('#2a2e34', { metalness:0.7, roughness:0.35 });
+  const b = buildHuman(g, { fwd:1, hip:1.0, legX:0.35, legW:0.48, torso:[1.38, 1.1, 0.9], torsoY:1.55, headY:2.38, headS:0.6, armX:0.9, armY:1.95, armZ:0.1, armL:1.0, armW:0.35,
+    mats:{ uni:body, dark, armor:plate, pouch:dark, boot:dark, glove:dark, helm, skin:dark, eye:glow('#ffcf6a') } });
+  e.legs = b.legs; e.arms = b.arms;
+  dpart(g, BOX, plate, [0.5, 0.25, 0.95], [-0.85, 2.05, 0]); dpart(g, BOX, plate, [0.5, 0.25, 0.95], [0.85, 2.05, 0]);
   const shield = part(g, BOX, std('#5a6068', { metalness:0.7, roughness:0.35 }), [1.5, 1.9, 0.12], [-0.15, 1.15, 0.85]); shield.userData.shield = true;
   part(g, BOX, std('#9fd8ff', { transparent:true, opacity:0.5, metalness:0.2 }), [0.6, 0.18, 0.13], [-0.15, 1.82, 0.86]).userData.shield = true;
   part(g, BOX, plate, [1.52, 0.08, 0.13], [-0.15, 0.25, 0.86]).userData.shield = true;
-  e.gunParts = [part(g, BOX, dark, [0.14, 0.14, 0.7], [0.95, 1.0, 0.45])];
-  e.mats = [body, dark, plate]; return g;
+  for (const sx of [-1, 1]) dpart(g, BOX, plate, [0.08, 1.6, 0.14], [-0.15 + sx * 0.7, 1.15, 0.87]).userData.shield = true;
+  e.gunParts = [part(g, BOX, dark, [0.14, 0.14, 0.7], [0.95, 1.0, 0.45]), dpart(g, BOX, plate, [0.2, 0.18, 0.2], [0.95, 1.0, 0.12])];
+  e.mats = [body, dark, plate, helm]; return g;
 }
 function buildJugg(e) {
   // 네 다리 대형 기계: 앞쪽 센서 머리, 어깨 미사일 포드, 등 뒤 노출된 동력 코어(약점)
@@ -2693,35 +2766,33 @@ function buildJugg(e) {
   e.mats = [body, dark, plate]; return g;
 }
 function buildBoss(e) {
+  // 경비대장: 거대한 중장갑, 붉은 가슴판과 어깨판, 붉은 바이저, 오른팔 회전 기관총, 등 뒤 유탄 통
   const g = new THREE.Group(), body = std('#2a2d33', { metalness:0.6 }), dark = std('#17191d', { metalness:0.6 }), plate = std('#7a1f24', { metalness:0.4 }), eye = glow('#ff2a1e');
-  e.legs = [part(g, BOX, dark, [0.65, 1.4, 0.7], [-0.5, 0.7, 0]), part(g, BOX, dark, [0.65, 1.4, 0.7], [0.5, 0.7, 0])];
-  part(g, BOX, body, [1.9, 1.5, 1.2], [0, 2.15, 0]);
-  part(g, BOX, plate, [1.6, 1.1, 0.15], [0, 2.2, 0.62]);
-  part(g, BOX, plate, [0.7, 0.4, 1.25], [-1.2, 2.85, 0]); part(g, BOX, plate, [0.7, 0.4, 1.25], [1.2, 2.85, 0]);
-  part(g, BOX, dark, [0.85, 0.7, 0.8], [0, 3.25, 0.05]).userData.head = true;
-  part(g, BOX, plate, [0.9, 0.18, 0.85], [0, 3.62, 0.05]).userData.head = true;
-  part(g, BOX, eye, [0.7, 0.12, 0.05], [0, 3.28, 0.46]).userData.head = true;
+  const b = buildHuman(g, { fwd:1, hip:1.4, legX:0.5, legW:0.65, torso:[1.9, 1.5, 1.2], torsoY:2.15, headY:3.25, headS:0.85, armX:1.25, armY:2.7, armZ:0.1, armL:1.4, armW:0.5, pack:true,
+    mats:{ uni:body, dark, armor:plate, pouch:dark, boot:dark, glove:dark, helm:dark, skin:dark, eye } });
+  e.legs = b.legs; e.arms = b.arms;
+  dpart(g, BOX, plate, [1.6, 1.1, 0.15], [0, 2.2, 0.62]);
+  dpart(g, BOX, plate, [0.7, 0.4, 1.25], [-1.2, 2.85, 0]); dpart(g, BOX, plate, [0.7, 0.4, 1.25], [1.2, 2.85, 0]);
+  dpart(g, BOX, plate, [0.9, 0.18, 0.85], [0, 3.62, 0.05]).userData.head = true;
   part(g, BOX, std('#ff6a50', { metalness:0.8, roughness:0.2, transparent:true, opacity:0.45 }), [0.9, 0.42, 0.08], [0, 3.25, 0.5]).userData.head = true;
-  e.arms = [part(g, BOX, body, [0.5, 1.4, 0.55], [-1.25, 2.0, 0.1]), part(g, BOX, body, [0.5, 1.4, 0.55], [1.25, 2.0, 0.1])];
-  // 오른팔 회전 기관총
   const gun = new THREE.Group(); gun.position.set(1.25, 1.35, 0.55); g.add(gun);
   for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; part(gun, BOX, dark, [0.08, 0.08, 1.3], [Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0.55]); }
   part(gun, BOX, plate, [0.45, 0.45, 0.4], [0, 0, 0]);
+  dpart(gun, BOX, dark, [0.36, 0.36, 0.08], [0, 0, 1.05]);
   e.minigun = gun; e.gunParts = [gun];
-  // 왼쪽 등에 유탄 통
   part(g, BOX, std('#4a4f56', { metalness:0.6 }), [0.5, 0.9, 0.5], [-0.7, 2.6, -0.75]);
+  dpart(g, BOX, plate, [0.52, 0.1, 0.52], [-0.7, 3.08, -0.75]);
   e.mats = [body, dark, plate]; g.scale.setScalar(1.0); return g;
 }
 function buildBrute(e) {
+  // 중장갑: 철판 장갑과 주황 어깨판, 푸른 방탄 바이저 (머리 한 방에 죽지 않음)
   const g = new THREE.Group(), body = std('#4b4f58', { metalness:0.5 }), dark = std('#2c2f35', { metalness:0.5 }), plate = std('#e0a030'), eye = glow('#ff9a3c');
-  e.legs = [part(g, BOX, dark, [0.5, 1.1, 0.55], [-0.38, 0.55, 0]), part(g, BOX, dark, [0.5, 1.1, 0.55], [0.38, 0.55, 0])];
-  part(g, BOX, body, [1.5, 1.2, 0.95], [0, 1.7, 0]);
-  part(g, BOX, plate, [0.55, 0.3, 1.0], [-0.95, 2.25, 0]); part(g, BOX, plate, [0.55, 0.3, 1.0], [0.95, 2.25, 0]);
-  part(g, BOX, dark, [0.65, 0.5, 0.6], [0, 2.55, 0.05]).userData.head = true;
-  part(g, BOX, eye, [0.5, 0.1, 0.05], [0, 2.58, 0.36]).userData.head = true;
+  const b = buildHuman(g, { fwd:1, hip:1.1, legX:0.38, legW:0.5, torso:[1.5, 1.2, 0.95], torsoY:1.7, headY:2.55, headS:0.65, armX:0.98, armY:2.1, armZ:0.1, armL:1.1, armW:0.38, pack:true,
+    mats:{ uni:body, dark, armor:dark, pouch:plate, boot:dark, glove:dark, helm:dark, skin:dark, eye } });
+  e.legs = b.legs; e.arms = b.arms;
+  dpart(g, BOX, plate, [0.55, 0.3, 1.0], [-0.95, 2.25, 0]); dpart(g, BOX, plate, [0.55, 0.3, 1.0], [0.95, 2.25, 0]);
   part(g, BOX, std('#6fa0c8', { metalness:0.8, roughness:0.2, transparent:true, opacity:0.55 }), [0.72, 0.36, 0.08], [0, 2.56, 0.4]).userData.head = true;
-  e.arms = [part(g, BOX, body, [0.38, 1.1, 0.45], [-0.98, 1.55, 0.1]), part(g, BOX, body, [0.38, 1.1, 0.45], [0.98, 1.55, 0.1])];
-  e.gunParts = [part(g, BOX, dark, [0.2, 0.2, 0.6], [0.98, 1.05, 0.4])];
+  e.gunParts = [part(g, BOX, dark, [0.2, 0.2, 0.6], [0.98, 1.05, 0.4]), dpart(g, BOX, plate, [0.24, 0.1, 0.3], [0.98, 1.2, 0.3])];
   e.mats = [body, dark, plate]; return g;
 }
 function buildDrone(e) {
@@ -2739,14 +2810,17 @@ const _realPos = new THREE.Vector3(), _realEye = new THREE.Vector3(), tmpV3 = ne
 // 적의 총을 오른팔에 붙임: 팔을 앞으로 겨눈 자세(-1.35)일 때 원래 자리에 오도록 보정해서,
 // 팔을 내리거나 흔들면 총도 팔을 따라 움직임
 const ENEMY_AIM = -1.35, AXIS_X = new THREE.Vector3(1, 0, 0);
+// 중장갑, 보스가드, 경비대장은 총을 허리 높이에 들고 쏘므로 팔을 조금만 앞으로 듦
+const HIP_AIM = { brute:-0.45, bguard:-0.45, boss:-0.45 };
 function attachGun(e) {
-  const arm = e.arms[1], holder = new THREE.Group();
-  holder.rotation.x = -ENEMY_AIM;
-  holder.position.copy(arm.position).negate().applyAxisAngle(AXIS_X, -ENEMY_AIM);
+  const arm = e.arms[1], holder = new THREE.Group(), A = e.aimAng = HIP_AIM[e.type] || ENEMY_AIM;
+  holder.rotation.x = -A;
+  holder.position.copy(arm.position).negate().applyAxisAngle(AXIS_X, -A);
   arm.add(holder);
   for (const m of e.gunParts) { m.parent.remove(m); holder.add(m); }
 }
 function pivotLimb(m) {
+  if (m.userData.pivot) return m; // 이미 관절 묶음으로 만든 팔다리
   const p = m.parent, pv = new THREE.Group(), h = m.scale.y;
   pv.position.set(m.position.x, m.position.y + h / 2, m.position.z); p.add(pv); p.remove(m); pv.add(m); m.position.set(0, -h / 2, 0);
   return pv;
@@ -2772,7 +2846,7 @@ function enemyGait(e, dt, aimArms) {
   const amp = moving ? Math.min(r > 1.4 ? 0.85 : 0.55, 0.18 + r * 0.4) : 0, s = Math.sin(e.gp), q = 1 - Math.exp(-14 * dt);
   e.legs[0].rotation.x += (s * amp - e.legs[0].rotation.x) * q; e.legs[1].rotation.x += (-s * amp - e.legs[1].rotation.x) * q;
   if (!e.arms || !e.arms.length) return;
-  if (aimArms) e.arms.forEach(a => { a.rotation.x = -1.35 + Math.max(0, e.kickT || 0) * 2; });
+  if (aimArms) e.arms.forEach(a => { a.rotation.x = (e.aimAng || ENEMY_AIM) + Math.max(0, e.kickT || 0) * 2; });
   else { const base = e.alert ? -0.7 : -0.25, k2 = e.alert ? 0.4 : 0.8; e.arms[0].rotation.x += (base - s * amp * k2 - e.arms[0].rotation.x) * q; e.arms[1].rotation.x += (base + s * amp * k2 - e.arms[1].rotation.x) * q; }
 }
 function spawnEnemy(type) {
@@ -2808,14 +2882,27 @@ function spawnEnemyAt(type, x, z, alert, y = 0) {
   if (mode === 'raid' && raid && raid.cfg && raid.cfg.bossMul && e.isBoss) buffBoss(e, raid.cfg.bossMul);
   return e;
 }
-function damageEnemy(e, d, dir) {
+// 전투 기록용: 지금 피해를 주는 무기와 머리 명중 여부 (사격, 폭발이 정함)
+let hitCtx = null;
+const ENEMY_NAME = { grunt:'보병', drone:'드론', brute:'중장갑', boss:'경비대장', jugg:'파쇄기', snp:'저격수', bguard:'보스가드' };
+function logKill(e) {
+  if (!raid || !raid.log) return;
+  const h = e.lastHit || {};
+  raid.log.kills.push({ t:(performance.now() - raid.log.start) / 1000, name:e.name || ENEMY_NAME[e.type] || '적', w:h.w || '?', head:!!h.head, dist:Math.round(Math.hypot(e.g.position.x - P.pos.x, e.g.position.z - P.pos.z)) });
+}
+// by: 피해를 준 사람 (없으면 나). 다른 팀원이 준 피해는 AI 담당자 화면에서 by 가 붙어 들어옴
+function damageEnemy(e, d, dir, by) {
   e.engaged = true; // 공격받으면 누구든 쫓음
+  if (by === undefined && raid && raid.log) {
+    raid.log.dealt += Math.max(0, Math.min(d, e.hp)); if (hitCtx && hitCtx.head) raid.log.heads++;
+    e.lastHit = { w:hitCtx ? hitCtx.w : '?', head:!!(hitCtx && hitCtx.head) };
+  }
   if (netPuppet()) { e.flashT = 0.08; if (e.pup) NET.hq.set(e.nid, (NET.hq.get(e.nid) || 0) + d); return false; }
   alertAround(e.g.position, 14, e.fy); e.alert = true;
   if (e.type === 'drone') d = e.hp + 1; // 드론은 어디에 맞아도 한 발에 격추
   e.hp -= d; e.flashT = 0.08;
   if (e.type !== 'brute') e.g.position.addScaledVector(tmpV.set(dir.x, 0, dir.z).normalize(), 0.08);
-  if (e.hp <= 0) { killEnemy(e); return true; }
+  if (e.hp <= 0) { e.killedBy = by === undefined ? (NET.id || 0) : by; if (by === undefined) logKill(e); killEnemy(e); return true; }
   return false;
 }
 // 보스별 특수탄 보급 상자: 방패, 바이저 보스는 관통탄, 저격수, 지휘관, 기계화가드는 고폭탄, 최상위 보스는 둘 중 하나
@@ -2827,7 +2914,7 @@ function bossAmmoDrop(e) {
 }
 function killEnemy(e) {
   if (e.aimLine) { scene.remove(e.aimLine); e.aimLine = null; }
-  if (netIsAI() && e.nid) NET.deadQ.push(e.nid);
+  if (netIsAI() && e.nid) NET.deadQ.push([e.nid, e.killedBy || 0]);
   const nBox = lootBoxes.length;
   for (const b of lootBoxes) if (b.locked && b.owners && b.owners.includes(e)) {
     b.owners = b.owners.filter(x => x !== e);
@@ -2952,7 +3039,7 @@ function alertAround(pos, r, fy = pos.y) {
   const f = floorOf(fy);
   for (const o of enemies) if (!o.dead && !o.alert && Math.hypot(o.g.position.x - pos.x, o.g.position.z - pos.z) < r * (floorOf(o.fy) === f ? 1 : 0.4)) { o.alert = true; o.cd = rand(0.8, 1.6); }
 }
-function seeMul() { return (laserActive() || lightActive() ? 1 : 0.7) * (1 - crouchT * 0.25); }
+function seeMul() { return (laserActive() || lightActive() ? 1 : 0.7) * (1 - crouchT * 0.25) * (1 - proneT * 0.45); }
 function updateEnemies(dt) {
   // 협동전에서 AI 담당이 아닌 사람: 적을 직접 움직이지 않고 담당자가 보낸 위치를 따라 그림
   if (netPuppet()) { updatePuppets(dt); return; }
@@ -2962,7 +3049,7 @@ function updateEnemies(dt) {
     if (e.dead) continue;
     // 협동전: 가장 가까운 플레이어(나 또는 팀원)를 노림. 팀원을 노릴 때는 잠시 팀원 위치를 기준으로 계산
     const mt = pickTarget(e, dt);
-    if (mt) { _realPos.copy(P.pos); _realEye.copy(EYE); P.pos.set(mt.tx, mt.ty + 1.7, mt.tz); EYE.set(mt.tx, mt.ty + (mt.flags & 1 ? 1.15 : 1.7), mt.tz); aimMate = mt; }
+    if (mt) { _realPos.copy(P.pos); _realEye.copy(EYE); P.pos.set(mt.tx, mt.ty + 1.7, mt.tz); EYE.set(mt.tx, mt.ty + (mt.flags & 256 ? 0.45 : mt.flags & 1 ? 1.15 : 1.7), mt.tz); aimMate = mt; }
     try { updateEnemy(e, dt, eye); } finally { if (mt) { P.pos.copy(_realPos); EYE.copy(_realEye); aimMate = null; } }
   }
   enemies = enemies.filter(e => !e.dead);
@@ -3070,7 +3157,7 @@ function updateEnemy(e, dt, eye) {
           const from = g.position.clone().add(new THREE.Vector3(nx * 0.9 + nz * 0.25, 1.5, nz * 0.9 - nx * 0.25));
           if (!e.seen) { e.aiming = false; e.cd = 1.2; }
           else if (e.aimT <= 0) {
-            enemyShoot(e, from, 170, 75, '#ff3a2e', 0.004); SND.play('sniper');
+            enemyShoot(e, from, 170, e.rsnp ? 50 : 75, '#ff3a2e', 0.004); SND.play('sniper');
             e.aiming = false; e.cd = 4.5; e.kickT = 0.2;
           }
         } else if (e.cd <= 0 && e.seen) { e.aiming = true; e.aimT = 1.4; SND.play('charge', 1.4); }
@@ -3193,13 +3280,14 @@ function updateEnemy(e, dt, eye) {
 }
 
 // ---------- 플레이어 ----------
-function jump() { if (P.onGround && state === 'play' && !P.downed) { if (crouch) setCrouch(false); P.vy = 7.4; P.onGround = false; } }
+function jump() { if (P.onGround && state === 'play' && !P.downed) { if (prone) { setProne(false); return; } if (crouch) setCrouch(false); P.vy = 7.4; P.onGround = false; } }
 // 협동전 다운: 체력이 0 이 되면 바로 죽지 않고 쓰러짐. 출혈 시간 안에 팀원이 살리면 일어나고,
 // 쓰러진 동안 받은 피해가 DOWN_HP 를 넘거나 출혈 시간이 끝나면 사망
 const DOWN_HP = 60, BLEED_T = 60, REVIVE_T = 3, REVIVE_HP = 30;
 function goDown() {
   P.downed = true; P.hp = 0; P.downHp = DOWN_HP; P.bleedT = BLEED_T;
   mouseDown = false; aiming = false; reloading = 0; $('reloadTip').style.opacity = 0;
+  prone = false; document.querySelectorAll('.tb[data-t="prone"]').forEach(b => b.classList.remove('lit'));
   crouch = true; document.querySelectorAll('.tb[data-t="crouch"]').forEach(b => b.classList.add('lit'));
   $('downBox').hidden = false; SND.play('hurt');
   if (NET.inRaid) netSend({ t:'e', k:'down' });
@@ -3227,6 +3315,7 @@ function hurtPlayer(d) {
     return;
   }
   const absorb = Math.min(P.ar, d * (P.arAbs || 0.5));
+  if (raid && raid.log) raid.log.taken += d;
   P.ar -= absorb; P.hp -= d - absorb; P.calm = 0;
   dmgFlash = Math.min(1, dmgFlash + 0.5 + d / 40); hitEdgeT = 1; // 맞을 때마다 화면 테두리가 빨갛게 번쩍임
   SND.play('hurt');
@@ -3248,10 +3337,12 @@ function updatePlayer(dt) {
   const sprint = (keys.ShiftLeft || keys.ShiftRight || touchSprint) && iz < 0 && !aiming && !P.downed;
   P.sprinting = sprint;
   // 앉기: C 를 누르고 있는 동안만 앉음 (Ctrl+W 탭 닫기 사고를 막으려고 Ctrl 대신 C). 달리면 일어섬. 모바일은 버튼으로 켜고 끔
-  if (!isTouch) { const want = !!keys.KeyC && !sprint; if (want !== crouch) setCrouch(want); }
+  if (sprint && prone) setProne(false);
+  if (!isTouch) { const want = !!keys.KeyC && !sprint; if (want !== crouch && (want || !prone)) setCrouch(want); }
   else if (sprint && crouch) setCrouch(false);
   crouchT += ((crouch ? 1 : 0) - crouchT) * Math.min(1, dt * 10);
-  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (P.downed ? 0.35 : 1); // 쓰러지면 기어감
+  proneT += ((prone ? 1 : 0) - proneT) * Math.min(1, dt * 6);
+  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (1 - proneT * 0.7) * (P.downed ? 0.35 : 1); // 쓰러지면 기어감, 엎드리면 30% 속도
   const s = Math.sin(P.yaw), c = Math.cos(P.yaw);
   const vx = (ix * c + iz * s) * speed, vz = (-ix * s + iz * c) * speed;
   P.feet = P.pos.y - 1.7;
@@ -3275,7 +3366,7 @@ function updatePlayer(dt) {
     if (!insideSolid(tmpV.set(P.pos.x + rx * lo * 1.3, P.pos.y - 0.1, P.pos.z + rz * lo * 1.3))) break;
     lo *= 0.5;
   }
-  EYE.set(P.pos.x + rx * lo, P.pos.y - Math.abs(lo) * 0.15 - crouchT * CROUCH_DROP - (P.downed ? 0.55 : 0), P.pos.z + rz * lo);
+  EYE.set(P.pos.x + rx * lo, P.pos.y - Math.abs(lo) * 0.15 - crouchT * CROUCH_DROP - proneT * PRONE_DROP - (P.downed ? 0.55 : 0), P.pos.z + rz * lo);
   camera.position.set(EYE.x, EYE.y + (moving ? Math.sin(P.bob) * 0.05 : 0), EYE.z);
   if (shakeAmt > 0) { camera.position.x += rand(-shakeAmt, shakeAmt); camera.position.y += rand(-shakeAmt, shakeAmt); shakeAmt = Math.max(0, shakeAmt - dt * 0.9); }
   shotAgo += dt;
@@ -3355,9 +3446,9 @@ function updateShots(dt) {
     for (let k = 0; k < steps && s.t > 0; k++) {
       s.m.position.addScaledVector(s.v, dt / steps);
       const p = s.m.position;
-      const cy = clamp(p.y, P.pos.y - 1.5, P.pos.y - 0.35 - crouchT * CROUCH_DROP);
+      const cy = clamp(p.y, P.pos.y - 1.55, Math.max(P.pos.y - 1.5, P.pos.y - 0.35 - crouchT * CROUCH_DROP - proneT * 1.15));
       const bodyHit = Math.hypot(p.x - P.pos.x, p.z - P.pos.z) < 0.45 && Math.abs(p.y - cy) < 0.3;
-      const headHit = Math.hypot(p.x - EYE.x, p.y - EYE.y, p.z - EYE.z) < 0.4 - crouchT * 0.15;
+      const headHit = Math.hypot(p.x - EYE.x, p.y - EYE.y, p.z - EYE.z) < 0.4 - crouchT * 0.15 - proneT * 0.15;
       if (bodyHit || headHit) { hurtPlayer(s.dmg); s.t = 0; burst(p, '#ffddaa', 4, 2); }
       else if (insideSolid(p)) { s.t = 0; burst(p, '#b8e8ff', 3, 2); }
     }
@@ -3710,7 +3801,7 @@ const gunLabel = g => { const t = Object.values(g.up).reduce((a, b) => a + b, 0)
 const WBASE = WEAPONS.map(w => ({ dmg:w.dmg, recoil:w.recoil, reload:w.reload, mag:w.mag, charge:w.charge, rate:w.rate, auto:w.auto, headMul:w.headMul, magStep:undefined }));
 // 은신처(파밍) 모드 전용 무기 수치. magStep 이 있으면 탄창 강화가 단계당 그 발 수만큼 늘어남
 const RAID_W = {
-  0:{ dmg:18 },                                // 권총: 한 번 누를 때 한 발 (연사 불가), 피해 감소 (중장갑 이상에게는 절반)
+  0:{ auto:true, dmg:15 },                     // 권총: 누르고 있으면 연사, 피해 감소 (중장갑 이상에게는 절반)
   2:{ mag:30, magStep:10 },                    // 소총: 기본 30발, 강화마다 +10발
   3:{ mag:2, dmg:640, magStep:1 },             // 유탄발사기: 기본 2발, 피해 2배, 강화마다 +1발
   5:{ mag:8, magStep:2, headMul:3.2 }          // 저격총: 기본 8발, 강화마다 +2발, 머리 피해 증가
@@ -4404,8 +4495,8 @@ function beginRaid() {
   const AT = ARMOR_TIERS[HL.armor || 0]; P.ar = P.arMax = AT.pts; P.arAbs = AT.abs;
   for (const w of loadout) if (w) ammo[w].res = WEAPONS[w].charge ? Infinity : WEAPONS[w].mag * 2;
   const cfg = RAID[mapKey];
-  const left0 = sessLeft(), el0 = cfg.time - left0, rw0 = Math.floor(el0 / REINF_GAP);
-  raid = { queues:{}, ammo:'std', rwave:rw0, t:left0, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:(rw0 + 1) * REINF_GAP >= cfg.time ? Infinity : (rw0 + 1) * REINF_GAP, warned:false, map:mapKey, cap,
+  const lr = raidLeft(), left0 = lr === null ? cfg.time : Math.min(cfg.time, lr), el0 = cfg.time - left0, rw0 = Math.floor(el0 / REINF_GAP);
+  raid = { log:{ dealt:0, dealtP:0, taken:0, shots:0, hitShots:0, heads:0, kills:[], start:performance.now() }, queues:{}, ammo:'std', rwave:rw0, t:left0, bag, keys, gunObjs:[], equip, insGuns:[gunA, gunB].filter(Boolean), brought, insured, cfg, extT:0, nextReinf:(rw0 + 1) * REINF_GAP >= cfg.time ? Infinity : (rw0 + 1) * REINF_GAP, warned:false, map:mapKey, cap,
     // 탈출 지점: 내 출발 위치에서 extMinDist 이상 떨어진 곳과 공용 탈출구. 누가 써도 사라지지 않음
     coop:!!HL.coop, spawn, exts:cfg.ext.filter(e => !spawn || e.shared || Math.hypot(e.x - spawn.x, e.z - spawn.z) + Math.abs((e.y || 0) - spawn.y) * 2 >= cfg.extMinDist) };
   // 주무기 탄약 묶음 구성
@@ -4495,29 +4586,49 @@ function reinfUnit(t, far) {
 // 연구 시설은 5차씩 한 주기: 주기의 2번째는 증원 지휘관, 5번째는 파쇄기 (2, 5, 7, 10, 12, 15 ...차), 나머지는 정예 분대
 const REINF_GAP = 240;
 const isCmdrWave = n => (n - 1) % 5 + 1 === 2, isJuggWave = n => n % 5 === 0;
-// 세션: 맵마다 50분 단위로 모두가 같은 시계를 씀. 중간에 들어가면 남은 시간만 주어지고, 끝나면 남아 있는 사람은 사망
-// 시계는 서버 시간 기준 (연결 전이면 내 컴퓨터 시간)
-const SESSION_LEN = 3000;
-function sessLeft() { const t = (Date.now() + (NET.clockOff || 0)) / 1000; return SESSION_LEN - (t % SESSION_LEN); }
+// 세션: 한 판은 50분. 협동전은 서버가 맵마다 세션을 관리해서, 누군가 출격할 때만 새 세션이 시작되고
+// 남은 시간이 8분을 넘는 세션에만 중간 참가(남은 시간만 주어짐). 일반 모드(혼자)는 출격할 때마다 새 50분
+// 세션이 끝날 때 남아 있는 사람은 사망
+const SESSION_LEN = 3000, JOIN_MIN = 480;
+const serverNow = () => Date.now() + (NET.clockOff || 0);
+// 출격 중인 협동전 세션의 남은 시간(초). 협동전이 아니면 null
+function raidLeft() { return NET.inRaid && NET.sessEnd ? (NET.sessEnd - serverNow()) / 1000 : null; }
+// 은신처 맵 버튼: 들어갈 수 있는 세션의 남은 시간(초). 없으면 null (출격하면 새 50분 세션)
+function mapSessLeft(k) {
+  if (!HL.coop || !NET.sessMaps || !NET.sessMaps[k]) return null;
+  const left = (NET.sessMaps[k] - serverNow()) / 1000;
+  return left > JOIN_MIN ? left : null;
+}
+function sessLabel(k) { const l = mapSessLeft(k); return l === null ? `새 세션 ${fmtMS(SESSION_LEN)}` : `진행 중 남은 ${fmtMS(l)}`; }
 const fmtMS = sec => { sec = Math.max(0, Math.ceil(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
 function squadList(n, base, maxExtra = 3) {
   const extra = ['grunt', 'brute', 'grunt'].slice(0, Math.min(maxExtra, Math.max(0, n - 1)));
   return base.concat(extra);
 }
+// 증원 저격수: 저격수 보스와 같은 모습, 행동(1.4초 조준 뒤 강한 한 발)이지만 보스가 아님
+// 체력 150(정예 포함), 머리 한 방, 한 발 피해는 보스 저격수의 2/3, 전리품은 일반 적과 같음
+function reinfSniper() {
+  const e = reinfUnit('snp');
+  e.isBoss = false; e.rsnp = true; e.name = '증원 저격수'; e.hp = e.maxHp = 125; e.cd = rand(1.5, 3.5);
+  makeElite(e);
+  return e;
+}
 function spawnReinf(n) { const n0 = enemies.length; spawnReinfUnits(n); for (const e of enemies.slice(n0)) coopBuff(e); }
 function spawnReinfUnits(n) {
-  const where = raid.cfg.reinfAt === 'opposite' ? '반대편에서 ' : '';
   if (raid.cfg.reinf === 'squad') {
-    // 협곡: 1차 6명부터 매 차수 1명씩 늘어 최대 9명
-    for (const t of squadList(n, ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone'])) makeElite(reinfUnit(t));
-    SND.play('alarm'); say(`${where}${n}차 정예 증원 분대가 투입되었습니다`, 1);
+    // 협곡: 저격수 위주 분대. 저격수 3명(2차마다 1명씩 늘어 최대 6명) + 엄호 보병 2명(3차부터 3명) + 드론 1대
+    const ns = Math.min(6, 3 + Math.floor((n - 1) / 2)), ng = n >= 3 ? 3 : 2;
+    for (let i = 0; i < ns; i++) reinfSniper();
+    for (let i = 0; i < ng; i++) makeElite(reinfUnit('grunt'));
+    makeElite(reinfUnit('drone'));
+    SND.play('alarm');
     return;
   }
   if (!isCmdrWave(n) && !isJuggWave(n)) {
     // 지휘관, 파쇄기 차수가 아니면 정예 분대: 1차 6명, 3차 7명, 4차 이후 8명
     let k = 0; for (let i = 1; i <= n; i++) if (!isCmdrWave(i) && !isJuggWave(i)) k++;
     for (const t of squadList(k, ['grunt', 'grunt', 'grunt', 'brute', 'brute', 'drone'], 2)) makeElite(reinfUnit(t));
-    SND.play('alarm'); say(`${where}${n}차 정예 증원 분대가 투입되었습니다`);
+    SND.play('alarm');
     return;
   }
   if (isCmdrWave(n)) {
@@ -4526,12 +4637,12 @@ function spawnReinfUnits(n) {
     const c = reinfUnit('boss', true);
     c.cmdr = true; c.name = '증원 지휘관'; c.hp = c.maxHp = 1500 * (raid.cfg.bossMul ? raid.cfg.bossMul.hp : 1);
     c.mats[2].color.set('#c9a21a'); c.mats[0].color.set('#1e2a3a');
-    SND.play('roar'); say(`${where}증원 지휘관 부대가 투입되었습니다`);
+    SND.play('roar');
   } else {
     // 주기 5번째: 파쇄기와 정예병 4명
     for (const t of ['grunt', 'grunt', 'grunt', 'brute']) makeElite(reinfUnit(t));
     reinfUnit('jugg', true);
-    SND.play('roar'); setTimeout(() => SND.play('roar'), 600); say(`${where}파쇄기가 투입되었습니다`);
+    SND.play('roar'); setTimeout(() => SND.play('roar'), 600);
   }
 }
 // 미니맵: 플레이어가 바라보는 방향이 위쪽
@@ -4572,18 +4683,16 @@ function drawRadar(dt) {
 }
 function updateRaid(dt) {
   updateNet(dt);
-  // 남은 시간은 세션 시계로 계산 (세션이 넘어가면 0)
-  { const left = sessLeft(); raid.t = left > raid.t + 5 ? 0 : left; }
+  // 남은 시간: 협동전은 서버 세션 시계, 혼자 하는 판은 출격한 뒤부터 50분
+  { const lr = raidLeft(); raid.t = lr === null ? raid.t - dt : Math.min(raid.t, lr); }
   if (raid.t <= 0) { raidEnd(false, '세션이 끝날 때까지 탈출하지 못해 사망했습니다'); return; }
   const el = raid.cfg.time - raid.t;
   const warnAt = STASH.fac.intel >= 2 ? 60 : 30;
   const nextWave = raid.rwave + 1;
   if (!raid.warned && el >= raid.nextReinf - warnAt) {
+    // 증원 경보: 문구 없이 경보음만 (파쇄기는 두 번)
     raid.warned = true; SND.play('alarm');
-    if (raid.cfg.reinf === 'squad') say(`경보: ${warnAt}초 뒤 ${nextWave}차 정예 증원 분대가 투입됩니다`);
-    else if (isJuggWave(nextWave)) { setTimeout(() => SND.play('alarm'), 1700); say(`경보: ${warnAt}초 뒤 파쇄기가 투입됩니다`); }
-    else if (isCmdrWave(nextWave)) say(`경보: ${warnAt}초 뒤 증원 지휘관 부대가 투입됩니다`);
-    else say(`경보: ${warnAt}초 뒤 ${nextWave}차 정예 증원 분대가 투입됩니다`);
+    if (raid.cfg.reinf !== 'squad' && isJuggWave(nextWave)) setTimeout(() => SND.play('alarm'), 1700);
   }
   P.calm += dt;
   const ml = STASH.fac.med;
@@ -4627,7 +4736,7 @@ function updateRaid(dt) {
   const boss = enemies.filter(e => e.isBoss && !e.dead && e.alert)
     .sort((a, b) => Math.hypot(a.g.position.x - P.pos.x, a.g.position.z - P.pos.z) - Math.hypot(b.g.position.x - P.pos.x, b.g.position.z - P.pos.z))[0];
   const showBoss = boss && Math.hypot(boss.g.position.x - P.pos.x, boss.g.position.z - P.pos.z) < 70;
-  $('bossBar').style.display = showBoss ? 'block' : 'none';
+  $('bossBar').style.display = 'none'; // 보스 체력바는 표시하지 않음
   if (showBoss) { $('bossFill').style.width = Math.max(0, boss.hp / boss.maxHp * 100) + '%'; setTxt('bossName', boss.name); $('bossFill').style.background = boss.regional ? '#f5f0e0' : boss.type === 'snp' ? '#ff6a5a' : boss.type === 'bguard' ? '#ffcf6a' : boss.type === 'jugg' ? '#9ae03a' : boss.cmdr ? '#e0a030' : '#d8323a'; }
 }
 // 가방 속 물건 하나를 창고에 넣음 (총기는 강화 정보, 카드키는 남은 횟수 유지)
@@ -4683,6 +4792,12 @@ function raidEnd(ok, why) {
   $('raidSub').textContent = ok ? `${why}을(를) 통해 빠져나왔습니다. 처치 ${kills}, 가져온 물건 가치 ${gained.toLocaleString()} 크레딧.`
                                  : `${why}. 가지고 들어간 장비와 주운 물건을 잃었습니다.` + (r.insured ? ' 보험에 든 장비는 일부 돌려받았습니다.' : ' 권총은 남아 있습니다.');
   $('raidList').innerHTML = rows.length ? rows.join('') : '<div class="row gain"><span>없음</span><span></span></div>';
+  // 전투 기록: 입힌 피해, 받은 피해, 명중률, 머리 명중, 처치 기록
+  { const L = r.log, acc = L.shots ? Math.round(L.hitShots / L.shots * 100) : 0, n = v => Math.round(v).toLocaleString();
+    $('raidLog').innerHTML = `<h3>전투 기록</h3><div class="stats">`
+      + `<div>입힌 피해<b>${n(L.dealt)}</b></div>` + (L.dealtP ? `<div>플레이어에게 준 피해<b>${n(L.dealtP)}</b></div>` : '')
+      + `<div>받은 피해<b>${n(L.taken)}</b></div><div>처치<b>${L.kills.length}</b></div><div>명중률<b>${acc}%</b></div><div>머리 명중<b>${L.heads}</b></div></div>`
+      + `<div class="kl">${L.kills.length ? L.kills.map(k => `<div><span class="tm">${fmtMS(k.t)}</span><span>${k.name}</span><span>${k.w}${k.head ? ' <span class="hs">헤드샷</span>' : ''}</span><span class="tm">${k.dist}m</span></div>`).join('') : '<div><span></span><span>처치 기록 없음</span><span></span><span></span></div>'}</div>`; }
   $('raidOv').hidden = false; $('hud').hidden = true;
   clearRaid();
   for (const e of enemies) { scene.remove(e.g); if (e.aimLine) scene.remove(e.aimLine); } enemies = [];
@@ -4743,7 +4858,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.12';
+const GAME_VER = 'v1.2.13';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -4777,7 +4892,7 @@ function netConnect() {
 function netClose() { clearTimeout(NET.rt); if (!NET.ws) return; NET.closing = true; netSend({ t:'leave' }); NET.ws.close(); }
 function netOn(m) {
   const vis = !$('hideOv').hidden;
-  if (m.t === 'welcome') { NET.id = m.id; NET.st = 'on'; NET.err = ''; if (+m.now > 0) NET.clockOff = +m.now - Date.now(); netSend({ t:'list' }); }
+  if (m.t === 'welcome') { NET.id = m.id; NET.st = 'on'; NET.err = ''; if (+m.now > 0) NET.clockOff = +m.now - Date.now(); netSend({ t:'sess' }); netSend({ t:'list' }); }
   else if (m.t === 'err') NET.err = String(m.m || '');
   else if (m.t === 'list') NET.list = (m.rooms || []).filter(r => r && r.mode === 'coop' && /^[A-Z0-9]{4}$/.test(r.code));
   else if (m.t === 'joined') NET.err = '';
@@ -4785,7 +4900,8 @@ function netOn(m) {
     NET.room = m.room;
     if (MAPS[m.room.map] && raidMap !== m.room.map && state !== 'play') { raidMap = m.room.map; if (vis) buildLevel(raidMap); }
   }
-  else if (m.t === 'start') { NET.room = m.room; NET.ai = (m.ai | 0) || (m.room && m.room.host) || 0; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; NET.slot = m.slot | 0; netStartRaid(); return; }
+  else if (m.t === 'sess') { if (+m.now > 0) NET.clockOff = +m.now - Date.now(); if (m.maps && typeof m.maps === 'object') NET.sessMaps = m.maps; return; }
+  else if (m.t === 'start') { NET.sessEnd = +m.sessEnd || 0; if (+m.now > 0) NET.clockOff = +m.now - Date.now(); NET.room = m.room; NET.ai = (m.ai | 0) || (m.room && m.room.host) || 0; NET.seed = m.seed | 0; NET.order = m.order && m.order[NET.id] !== undefined ? m.order[NET.id] | 0 : -1; NET.slot = m.slot | 0; netStartRaid(); return; }
   else if (m.t === 'S') { if (NET.inRaid && Array.isArray(m.p)) for (const a of m.p) mateState(a); return; }
   else if (m.t === 'e') { netEvent(m); return; }
   else if (m.t === 'ai') { netAI(m.d); return; }
@@ -4800,7 +4916,8 @@ function netOn(m) {
 // 같은 파티끼리(팀킬)는 피해 0.5배, 같은 판의 다른 파티에게는 그대로
 const PVP_MUL = 0.5, MATE_COL = '#3f6f9a', FOE_COL = '#6a5a3c';
 const MATES = new Map();
-const mateMats = { body:std(MATE_COL), dark:std('#2a3440'), skin:std('#c9a27e') }, foeMats = { body:std(FOE_COL), dark:std('#2e2a22'), skin:std('#c9a27e') };
+const mateMats = { body:std(MATE_COL), dark:std('#2a3440'), skin:std('#c9a27e'), armor:std('#2f4356', { roughness:0.85 }), helm:std('#25313d', { roughness:0.5, metalness:0.3 }), boot:std('#16191d'), eye:std('#10161c', { metalness:0.8, roughness:0.15 }) },
+  foeMats = { body:std(FOE_COL), dark:std('#2e2a22'), skin:std('#c9a27e'), armor:std('#4a3f2c', { roughness:0.85 }), helm:std('#33291d', { roughness:0.5, metalness:0.3 }), boot:std('#17140f'), eye:std('#10161c', { metalness:0.8, roughness:0.15 }) };
 const isParty = id => !!(NET.room && NET.room.players.some(p => p.id === id));
 function nickOf(id) { const p = NET.room && NET.room.players.find(x => x.id === id); return p ? p.nick : '팀원'; }
 function nameTag(text) {
@@ -4831,6 +4948,18 @@ function makeMate(id) {
   const armL = limb(torso, M2.body, 0.15, 0.58, 0.17, -0.36, 0.6, 0), armR = limb(torso, M2.body, 0.15, 0.58, 0.17, 0.36, 0.6, 0);
   const gun = new THREE.Group(); gun.position.set(0.1, 0.38, -0.3); torso.add(gun);
   part(gun, BOX, M2.dark, [0.08, 0.1, 0.64], [0, 0, -0.12]); part(gun, BOX, M2.dark, [0.06, 0.16, 0.08], [0, -0.1, 0.08]);
+  dpart(gun, BOX, M2.dark, [0.06, 0.07, 0.18], [0, 0.08, -0.05]); dpart(gun, BOX, M2.dark, [0.07, 0.14, 0.09], [0, -0.1, -0.16]);
+  // 세부 장비 (정면이 -Z): 군화, 무릎 보호대, 방탄 조끼, 탄창 주머니, 벨트, 배낭, 어깨 패드, 장갑, 헬멧, 고글, 헤드셋
+  for (const sh of [shinL, shinR]) { dpart(sh, BOX, M2.boot, [0.21, 0.08, 0.3], [0, -0.43, -0.04]); dpart(sh, BOX, M2.armor, [0.16, 0.08, 0.06], [0, -0.04, -0.12]); }
+  dpart(torso, BOX, M2.armor, [0.6, 0.42, 0.36], [0, 0.4, 0]);
+  for (const k of [-1, 0, 1]) dpart(torso, BOX, M2.dark, [0.12, 0.13, 0.07], [k * 0.15, 0.3, -0.2]);
+  dpart(torso, BOX, M2.dark, [0.58, 0.06, 0.34], [0, 0.04, 0]);
+  dpart(torso, BOX, M2.dark, [0.36, 0.4, 0.15], [0, 0.38, 0.23]);
+  for (const ar of [armL, armR]) { dpart(ar, BOX, M2.armor, [0.18, 0.12, 0.2], [0, -0.05, 0]); dpart(ar, BOX, M2.boot, [0.14, 0.08, 0.16], [0, -0.56, 0]); }
+  dpart(neck, SPH, M2.helm, [0.17, 0.13, 0.18], [0, 0.26, 0.01]).userData.head = true;
+  dpart(neck, BOX, M2.helm, [0.33, 0.03, 0.34], [0, 0.22, 0.01]).userData.head = true;
+  dpart(neck, BOX, M2.eye, [0.22, 0.05, 0.03], [0, 0.17, -0.15]).userData.head = true;
+  for (const sx of [-1, 1]) dpart(neck, BOX, M2.dark, [0.04, 0.09, 0.09], [sx * 0.16, 0.14, 0]).userData.head = true;
   const tag = party ? nameTag(nickOf(id)) : new THREE.Object3D(); tag.position.set(0, 2.25, 0); g.add(tag);
   // 레이저와 라이트 빛줄기 (켠 사람 말고 다른 사람에게도 보이게)
   const lz = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), laserMat); lz.frustumCulled = false; lz.visible = false; scene.add(lz);
@@ -4847,7 +4976,7 @@ function makeMate(id) {
 function animateMate(mt, dt) {
   const g = mt.g, f = mt.flags, q = 1 - Math.exp(-16 * dt);
   const L = (o, k, v) => { o[k] += (v - o[k]) * q; };
-  const down = mt.down, crouchF = !!(f & 1) && !down, run = !!(f & 16) && !down && !crouchF, reload = !!(f & 32), aim = !!(f & 64), rev = !!(f & 128) && !down;
+  const down = mt.down, proneF = !!(f & 256) && !down, crouchF = !!(f & 1) && !down && !proneF, run = !!(f & 16) && !down && !crouchF && !proneF, reload = !!(f & 32), aim = !!(f & 64), rev = !!(f & 128) && !down;
   // 화면에 그려진 위치 변화로 이동 속도와 방향(앞뒤, 옆)을 구함
   const vx = (g.position.x - mt.lx) / Math.max(dt, 1e-3), vz = (g.position.z - mt.lz0) / Math.max(dt, 1e-3); mt.lx = g.position.x; mt.lz0 = g.position.z;
   const sy = Math.sin(g.rotation.y), cy = Math.cos(g.rotation.y), a8 = Math.min(1, dt * 8);
@@ -4858,13 +4987,22 @@ function animateMate(mt, dt) {
   const back = mt.fs < -0.3 ? -1 : 1, sideK = Math.abs(mt.ss) > Math.abs(mt.fs) * 1.2 ? 1 : 0;
   mt.kick = Math.max(0, mt.kick - dt * 8); mt.throwT = Math.max(0, mt.throwT - dt);
   // 몸 전체: 쓰러지면 엎드려 눕고(머리가 앞쪽), 나머지는 세움
-  L(mt.body.rotation, 'x', down ? -Math.PI / 2 : 0); L(mt.body.position, 'y', down ? 0.17 : 0); L(mt.body.position, 'z', down ? 0.55 : 0);
+  const lying = down || proneF;
+  L(mt.body.rotation, 'x', lying ? -Math.PI / 2 : 0); L(mt.body.position, 'y', lying ? 0.17 : 0); L(mt.body.position, 'z', lying ? 0.55 : 0);
   mt.gun.visible = !down && !rev;
+  let gunZ0 = -0.3;
   let hipY = 0.9, torsoX = -0.04, tL = 0, tR = 0, tLz = 0, tRz = 0, sL, sR, aL, aR, aLz = 0.45, aRz = 0.08, gunY = 0.36, gunX = -0.15 + mt.pitch * 0.4, gunZ = 0;
   if (down) {
     // 기어가기: 두 팔을 번갈아 앞으로 뻗고 다리는 살짝 밂
     hipY = 0.9; torsoX = 0; tL = 0.25 * s * (moving ? 1 : 0); tR = -tL; sL = -0.35 - Math.max(0, s) * 0.4 * (moving ? 1 : 0); sR = -0.35 - Math.max(0, -s) * 0.4 * (moving ? 1 : 0);
     aL = Math.PI - 0.45 + s * (moving ? 0.55 : 0.1); aR = Math.PI - 0.45 - s * (moving ? 0.55 : 0.1); aLz = -0.25; aRz = 0.25;
+  } else if (proneF) {
+    // 엎드리기: 총을 앞으로 들고 엎드림. 움직이면 팔꿈치와 무릎으로 조금씩 기어감
+    const mv2 = moving ? 1 : 0;
+    hipY = 0.9; torsoX = 0; tL = 0.18 * s * mv2; tR = -tL; sL = -0.25 - Math.max(0, s) * 0.3 * mv2; sR = -0.25 - Math.max(0, -s) * 0.3 * mv2;
+    aL = Math.PI - 0.4 + s * 0.25 * mv2; aR = Math.PI - 0.25 - s * 0.25 * mv2; aLz = 0.35; aRz = -0.05;
+    gunY = 0.66; gunX = Math.PI / 2 + mt.pitch * 0.5; gunZ0 = -0.02;
+    aL -= mt.kick * 0.15; aR -= mt.kick * 0.15; gunZ = 0;
   } else if (rev) {
     // 무릎 꿇고 앞으로 손 뻗어 살리기 (왼쪽 무릎 세움, 오른쪽 무릎 바닥)
     hipY = 0.56; torsoX = -0.5; tL = 1.45; sL = -1.45; tR = 0.12; sR = -1.55;
@@ -4895,12 +5033,12 @@ function animateMate(mt, dt) {
     mt.armR.rotation.x = p2 < 0.45 ? 0.8 + (3.6 - 0.8) * (p2 / 0.45) : 3.6 + (1.0 - 3.6) * ((p2 - 0.45) / 0.55);
     mt.armR.rotation.z = -0.15; mt.gun.visible = false;
   } else L(mt.armR.rotation, 'x', aR);
-  L(mt.gun.position, 'y', gunY); L(mt.gun.rotation, 'x', gunX); L(mt.gun.position, 'z', -0.3 + gunZ); L(mt.gun.rotation, 'z', reload ? 0.5 : 0);
+  L(mt.gun.position, 'y', gunY); L(mt.gun.rotation, 'x', gunX); L(mt.gun.position, 'z', gunZ0 + gunZ); L(mt.gun.rotation, 'z', reload ? 0.5 : 0);
   // 조준하면 고개를 총 쪽(오른쪽 아래)으로 숙여 개머리판에 뺨을 댐
-  const aimHead = aim && !down && !rev && !(run && !aim);
-  L(mt.neck.rotation, 'x', down || rev ? 0.3 : mt.pitch * 0.6 - torsoX * 0.6 - (aimHead ? 0.38 : 0));
+  const aimHead = aim && !down && !rev && !proneF && !(run && !aim);
+  L(mt.neck.rotation, 'x', proneF ? 0.95 + mt.pitch * 0.4 : down || rev ? 0.3 : mt.pitch * 0.6 - torsoX * 0.6 - (aimHead ? 0.38 : 0));
   L(mt.neck.rotation, 'z', aimHead ? -0.24 : 0); L(mt.neck.rotation, 'y', aimHead ? -0.12 : 0);
-  mt.tag.position.y = down ? 0.9 : rev ? 1.65 : crouchF ? 1.8 : 2.25;
+  mt.tag.position.y = lying ? 0.9 : rev ? 1.65 : crouchF ? 1.8 : 2.25;
 }
 function mateState(a) {
   if (!raid || !Array.isArray(a) || a.length < 7) return;
@@ -4939,6 +5077,7 @@ function mateMeshes() { const a = []; for (const mt of MATES.values()) if (mt.g.
 function hitMate(mt, dmg, head, exact) {
   if (!NET.inRaid) return;
   const d = exact ? dmg : dmg * (mt.party ? PVP_MUL : 1);
+  if (!exact && raid && raid.log) raid.log.dealtP += d;
   netSend({ t:'e', k:'hit', to:mt.id, dmg:Math.max(1, Math.round(d)), head:!!head });
 }
 function nearDownedMate() {
@@ -5008,7 +5147,7 @@ function sendAI(dt) {
   const list = [];
   for (const e of enemies) {
     if (e.dead) continue;
-    const g = e.g, st = (e.alert ? 1 : 0) | (e.aiming ? 2 : 0) | (e.windup > 0 || e.dash > 0 ? 4 : 0) | (e.mg > 0 ? 8 : 0);
+    const g = e.g, st = (e.alert ? 1 : 0) | (e.aiming ? 2 : 0) | (e.windup > 0 || e.dash > 0 ? 4 : 0) | (e.mg > 0 ? 8 : 0) | (e.rsnp ? 16 : 0);
     const row = [e.nid, ETYPE_LIST.indexOf(e.type), r2(g.position.x), r2(g.position.y), r2(g.position.z), r2(g.rotation.y), Math.round(e.hp), Math.round(e.maxHp), st];
     const L = e._ns;
     if (full || !L || Math.abs(L[2] - row[2]) > 0.04 || Math.abs(L[3] - row[3]) > 0.04 || Math.abs(L[4] - row[4]) > 0.04 || Math.abs(L[5] - row[5]) > 0.05 || L[6] !== row[6] || L[8] !== row[8]) { list.push(row); e._ns = row; }
@@ -5041,13 +5180,18 @@ function netAI(d) {
     if (!e) { e = spawnEnemyAt(type, r[2], r[4], false, type === 'drone' ? r[3] - (M.droneH || 4.6) : r[3]); e.g.position.y = r[3]; }
     e.pup = true; e.nid = nid;
     e.tx = r[2]; e.ty = r[3]; e.tz = r[4]; e.tr = r[5]; e.hp = r[6]; e.maxHp = r[7]; e.st = r[8] | 0; e.alert = !!(e.st & 1);
+    if (e.st & 16 && !e.rsnp) { e.rsnp = true; e.isBoss = false; e.name = '증원 저격수'; }
   }
   if (d.f) {
     // 전체 목록: 담당자에게 없는 적은 정리
     if (!NET.matched) NET.matched = true;
     for (const e of enemies) if (!e.dead && (!e.pup || !seen.has(e.nid))) dropEnemyQuiet(e);
   }
-  if (Array.isArray(d.x)) for (const id of d.x) { const e = enemies.find(o => o.pup && o.nid === (id | 0) && !o.dead); if (e) killEnemy(e); }
+  if (Array.isArray(d.x)) for (const x of d.x) {
+    const id = Array.isArray(x) ? x[0] | 0 : x | 0, killer = Array.isArray(x) ? x[1] | 0 : 0;
+    const e = enemies.find(o => o.pup && o.nid === id && !o.dead);
+    if (e) { if (killer && killer === NET.id) logKill(e); killEnemy(e); }
+  }
   if (Array.isArray(d.s)) for (const a of d.s) {
     if (!Array.isArray(a) || a.length < 8) continue;
     const from = new THREE.Vector3(+a[0], +a[1], +a[2]), v = new THREE.Vector3(+a[3], +a[4], +a[5]);
@@ -5114,7 +5258,7 @@ function updateNet(dt) {
   if (netSendT <= 0) {
     netSendT = 1 / 15;
     const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0) | (laserActive() && !(WEAPONS[weapon].scope && aimT > 0.85) ? 4 : 0) | (lightActive() ? 8 : 0)
-      | (P.sprinting ? 16 : 0) | (reloading > 0 ? 32 : 0) | (aimT > 0.5 ? 64 : 0) | (reviveWho && reviveT > 0 ? 128 : 0);
+      | (P.sprinting ? 16 : 0) | (reloading > 0 ? 32 : 0) | (aimT > 0.5 ? 64 : 0) | (reviveWho && reviveT > 0 ? 128 : 0) | (prone ? 256 : 0);
     netSend({ t:'s', p:[+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.yaw.toFixed(2), +P.pitch.toFixed(2), f, weapon, Math.round(P.hp)] });
   }
   // 적에게 준 피해를 모아서 AI 담당자에게 (1초에 최대 20번)
@@ -5152,7 +5296,7 @@ function netEvent(m) {
   if (m.k === 'ehit') {
     // 팀원이 적에게 준 피해 (AI 담당자만 받음)
     if (!netIsAI() || !Array.isArray(m.h)) return;
-    for (const h of m.h) { if (!Array.isArray(h)) continue; const e = enemies.find(o => o.nid === (h[0] | 0) && !o.dead); const d = +h[1]; if (e && d > 0) damageEnemy(e, d, tmpV3.set(0, 0, 0)); }
+    for (const h of m.h) { if (!Array.isArray(h)) continue; const e = enemies.find(o => o.nid === (h[0] | 0) && !o.dead); const d = +h[1]; if (e && d > 0) damageEnemy(e, d, tmpV3.set(0, 0, 0), m.from | 0); }
     return;
   }
   if (m.k === 'hit') {
@@ -5189,7 +5333,9 @@ function netStartRaid() {
   else { NET.inRaid = false; netSend({ t:'lobby' }); renderHideout(); }
 }
 // 맵 선택의 세션 남은 시간: 은신처가 열려 있으면 1초마다 갱신
-setInterval(() => { if ($('hideOv').hidden) return; const t = '남은 ' + fmtMS(sessLeft()); document.querySelectorAll('[data-sess]').forEach(el => { el.textContent = t; }); }, 1000);
+setInterval(() => { if ($('hideOv').hidden) return; document.querySelectorAll('[data-sess]').forEach(el => { el.textContent = sessLabel(el.dataset.sess); }); }, 1000);
+// 협동전 세션 상태는 은신처가 열려 있으면 5초마다 서버에 물어봄
+setInterval(() => { if (NET.st === 'on' && HL.coop && !$('hideOv').hidden) netSend({ t:'sess' }); }, 5000);
 // 파티 모집 목록은 파티 밖에 있을 때만 5초마다 새로 받음
 setInterval(() => { if (NET.st === 'on' && !NET.room && HL.coop && !$('hideOv').hidden) netSend({ t:'list' }); }, 5000);
 function renderRoom() {
@@ -5233,7 +5379,7 @@ function renderHideout() {
   $('hModes').innerHTML = `<button data-coop="0" aria-pressed="${!HL.coop}">일반 모드</button>`
     + `<button class="coop" data-coop="1" aria-pressed="${!!HL.coop}">협동전 모드</button>`;
   const roomLock = HL.coop && NET.room;
-  $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name} <span class="sessT" data-sess>남은 ${fmtMS(sessLeft())}</span></button>`).join('')
+  $('hMaps').innerHTML = RAID_MAPS.map(k => `<button class="opt" data-map="${k}" aria-pressed="${k === raidMap}" ${roomLock && k !== raidMap ? 'disabled' : ''}>${MAPS[k].name} <span class="sessT" data-sess="${k}">${sessLabel(k)}</span></button>`).join('')
     + (roomLock ? '<span class="hint">파티에 있는 동안에는 파티의 맵으로 고정됩니다</span>' : '');
   renderRoom();
   if (HL.coop && STASH.nick && !NET.ws && !NET.retry) netConnect();

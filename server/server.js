@@ -18,6 +18,7 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://ctple.github.io')
 const MAX_ROOM = 6;             // 파티 하나 최대 인원
 const MATCH_MAX = 12;           // 한 판 최대 인원
 const SESSION_MS = 3000 * 1000; // 세션 길이 50분 (게임과 같아야 함)
+const JOIN_MIN_MS = 8 * 60 * 1000; // 남은 시간이 8분 이하인 세션에는 새로 들어갈 수 없음
 const SPAWNS = { lab: 4, canyon: 2 }; // 맵별 출발 위치 개수 (파티마다 다른 위치를 주는 데 씀)
 const MAX_ROOMS = 30;           // 서버 전체 최대 방 개수
 const TICK = 1000 / 15;         // 위치 전송 간격 (1초에 15번)
@@ -47,11 +48,31 @@ function matchBroadcast(m, obj, except) {
   const s = JSON.stringify(obj);
   for (const c of m.players) if (c !== except) sendRaw(c, s);
 }
+// 세션: 누군가 출격할 때만 새로 시작 (아무도 없으면 기다림). 50분 동안 이어지고,
+// 남은 시간이 8분을 넘는 동안에만 다른 파티가 같은 세션에 들어올 수 있음. 그보다 적게 남았으면 새 세션을 염
+const sessions = new Map(); // 맵 -> [{ id, map, start }]
+let nextSess = 1;
+function joinableSession(map, now = Date.now()) {
+  const list = (sessions.get(map) || []).filter(ss => ss.start + SESSION_MS > now);
+  sessions.set(map, list);
+  return list.find(ss => ss.start + SESSION_MS - now > JOIN_MIN_MS) || null;
+}
+function sessionFor(map) {
+  let ss = joinableSession(map);
+  if (!ss) { ss = { id: nextSess++, map, start: Date.now() }; sessions.get(map).push(ss); }
+  return ss;
+}
+// 은신처 표시용: 맵마다 지금 들어갈 수 있는 세션의 끝나는 시각 (없으면 0 = 출격하면 새 세션)
+function sessInfo() {
+  const now = Date.now(), maps = {};
+  for (const k of Object.keys(SPAWNS)) { const ss = joinableSession(k, now); maps[k] = ss ? ss.start + SESSION_MS : 0; }
+  return { t: 'sess', now, len: SESSION_MS, joinMin: JOIN_MIN_MS, maps };
+}
 // 파티가 출격할 판 찾기: 같은 맵, 같은 세션, 자리가 남은 판. 없으면 새로 만듦
 function findMatch(room) {
-  const sidx = Math.floor(Date.now() / SESSION_MS), n = room.players.size;
-  for (const m of matches) if (m.map === room.map && m.sidx === sidx && m.players.size + n <= MATCH_MAX) return m;
-  const m = { map: room.map, sidx, seed: Math.floor(Math.random() * 2 ** 31), players: new Set(), ai: 0, slot: 0, tick: 0 };
+  const ss = sessionFor(room.map), n = room.players.size;
+  for (const m of matches) if (m.map === room.map && m.sess === ss && m.players.size + n <= MATCH_MAX) return m;
+  const m = { map: room.map, sess: ss, seed: Math.floor(Math.random() * 2 ** 31), players: new Set(), ai: 0, slot: 0, tick: 0 };
   matches.add(m);
   return m;
 }
@@ -138,6 +159,8 @@ function onMessage(c, msg) {
   }
   if (!c.nick) return send(c, { t: 'err', m: '먼저 닉네임을 보내야 합니다' });
 
+  if (t === 'sess') return send(c, sessInfo());
+
   if (t === 'list') {
     // 비밀방은 목록에 보이지 않음 (코드로만 입장)
     const list = [...rooms.values()].filter(r => !r.started && !r.priv).map(r => ({
@@ -198,7 +221,7 @@ function onMessage(c, msg) {
     let i = 0;
     for (const p of room.players.values()) { order[p.id] = i++; p.inRaid = true; p.match = m; p.state = null; p.down = false; m.players.add(p); }
     if (!m.ai) m.ai = room.host; // 판을 처음 연 파티의 파티장이 AI 적 계산을 맡음
-    return broadcast(room, { t: 'start', seed: m.seed, slot, order, ai: m.ai, room: roomInfo(room) });
+    return broadcast(room, { t: 'start', seed: m.seed, slot, order, ai: m.ai, sessEnd: m.sess.start + SESSION_MS, now: Date.now(), room: roomInfo(room) });
   }
 
   const m = c.match;
