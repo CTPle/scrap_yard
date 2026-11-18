@@ -6,6 +6,7 @@
 // - AI 적은 방장 컴퓨터가 계산하고, 서버는 다른 사람에게 전달만 함
 // - 사격, 피해, 쓰러짐, 부활, 탈출 같은 사건 전달
 // - 이번 달 보낸 데이터 양 기록 (주소 뒤에 /stats 를 붙이면 확인 가능)
+// - 접속, 출격, 종료 기록: Render 로그에 한 줄씩 남기고, GITHUB_TOKEN 이 있으면 깃허브 logs 브랜치에 날짜별 파일로 올림
 'use strict';
 const http = require('node:http');
 const { WebSocketServer } = require('ws');
@@ -28,7 +29,60 @@ const RATE = 120;               // 1초에 받을 수 있는 최대 메시지 �
 const MAPS = ['lab', 'canyon'];
 const MODES = ['normal', 'coop', 'team'];
 const NICK_RE = /^[가-힣A-Za-z0-9_]{2,12}$/;
-const MAX_DMG = 400;            // 한 번에 줄 수 있는 최대 피해 (비정상 값 차단)
+const MAX_DMG = 400;
+const MAP_NAME = { lab: '지하 연구 시설', canyon: '장거리 협곡' };            // 한 번에 줄 수 있는 최대 피해 (비정상 값 차단)
+
+// ---------- 접속 기록 ----------
+// 시각은 한국 시간. 깃허브 저장은 환경 변수 GITHUB_TOKEN(저장소 Contents 읽기/쓰기 권한)이 있을 때만 함
+const LOG_REPO = process.env.LOG_REPO || 'CTPle/scrap_yard';
+const LOG_BRANCH = process.env.LOG_BRANCH || 'logs';
+const LOG_TOKEN = process.env.GITHUB_TOKEN || '';
+const LOG_API = process.env.LOG_API || 'https://api.github.com'; // 시험용으로 바꿀 수 있음
+const LOG_EVERY = 5 * 60 * 1000;  // 깃허브에 올리는 간격 (5분, 쌓인 기록이 있을 때만)
+const logBuf = new Map();         // 날짜 -> 아직 올리지 않은 줄들
+const kst = (t = Date.now()) => new Date(t + 9 * 3600 * 1000).toISOString();
+function logLine(text) {
+  const iso = kst(), day = iso.slice(0, 10), line = `${iso.slice(11, 19)}  ${text}`;
+  console.log(`[기록] ${day} ${line}`);
+  if (!LOG_TOKEN) return;
+  if (!logBuf.has(day)) logBuf.set(day, []);
+  logBuf.get(day).push(line);
+}
+let flushing = false;
+async function flushLogs() {
+  if (!LOG_TOKEN || flushing || !logBuf.size) return;
+  flushing = true;
+  try {
+    for (const [day, lines] of [...logBuf]) {
+      if (!lines.length) { logBuf.delete(day); continue; }
+      const url = `${LOG_API}/repos/${LOG_REPO}/contents/logs/${day}.txt`;
+      const head = { authorization: `Bearer ${LOG_TOKEN}`, accept: 'application/vnd.github+json', 'user-agent': 'scrapyard-server', 'x-github-api-version': '2022-11-28' };
+      // 그날 파일이 이미 있으면 뒤에 이어 붙임
+      let sha, prev = '';
+      const g = await fetch(`${url}?ref=${LOG_BRANCH}`, { headers: head });
+      if (g.ok) { const j = await g.json(); sha = j.sha; prev = Buffer.from(j.content || '', 'base64').toString('utf8'); }
+      else if (g.status !== 404) throw new Error(`읽기 실패 ${g.status}`);
+      const take = lines.slice();
+      const body = { message: `접속 기록 ${day} (${take.length}줄)`, branch: LOG_BRANCH, content: Buffer.from(prev + take.join('\n') + '\n', 'utf8').toString('base64') };
+      if (sha) body.sha = sha;
+      const r = await fetch(url, { method: 'PUT', headers: { ...head, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error(`쓰기 실패 ${r.status} ${(await r.text()).slice(0, 200)}`);
+      lines.splice(0, take.length); // 올린 줄만 지움 (올리는 사이에 새로 쌓인 줄은 다음 번에)
+      if (!lines.length) logBuf.delete(day);
+    }
+  } catch (err) { console.error('기록 올리기 실패 (다음 번에 다시 시도):', err.message); }
+  finally { flushing = false; }
+}
+setInterval(flushLogs, LOG_EVERY);
+// Render 가 서버를 끄거나 재배포할 때 남은 기록을 올리고 종료
+let stopping = false;
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => {
+  if (stopping) return; stopping = true;
+  logLine('서버 종료');
+  for (const ws of (typeof wss !== 'undefined' ? wss.clients : [])) { const c = ws._c; if (c && c.nick) logLine(`종료  ${c.nick}  (서버 종료로 끊김, ${Math.round((Date.now() - c.t0) / 60000)}분 머묾, 출격 ${c.raids || 0}회)`); }
+  await Promise.race([flushLogs(), new Promise(r => setTimeout(r, 8000))]);
+  process.exit(0);
+});
 
 // ---------- 데이터 사용량 기록 ----------
 const usage = { month: '', bytes: 0, peak: 0 };
@@ -152,8 +206,11 @@ function onMessage(c, msg) {
   if (t === 'hello') {
     const nick = typeof msg.nick === 'string' ? msg.nick.trim() : '';
     if (!NICK_RE.test(nick)) return send(c, { t: 'err', m: '닉네임은 2~12자의 한글, 영문, 숫자, _ 만 쓸 수 있습니다' });
+    const ver = typeof msg.ver === 'string' ? msg.ver.slice(0, 20) : '';
+    if (!c.nick) logLine(`접속  ${nick}  ${ver}`);
+    else if (c.nick !== nick) logLine(`닉네임 변경  ${c.nick} -> ${nick}`);
     c.nick = nick;
-    c.ver = typeof msg.ver === 'string' ? msg.ver.slice(0, 20) : '';
+    c.ver = ver;
     if (c.room) sendRoom(c.room);
     return send(c, { t: 'welcome', id: c.id, now: Date.now() }); // now: 세션 시계를 맞추는 서버 시간
   }
@@ -219,7 +276,8 @@ function onMessage(c, msg) {
     const m = findMatch(room), slot = m.slot++ % (SPAWNS[room.map] || 1);
     const order = {};
     let i = 0;
-    for (const p of room.players.values()) { order[p.id] = i++; p.inRaid = true; p.match = m; p.state = null; p.down = false; m.players.add(p); }
+    for (const p of room.players.values()) { order[p.id] = i++; p.inRaid = true; p.match = m; p.state = null; p.down = false; m.players.add(p); p.raids = (p.raids || 0) + 1; }
+    logLine(`출격  ${[...room.players.values()].map(p => p.nick).join(', ')}  (${MAP_NAME[room.map] || room.map}, ${room.players.size}명 파티)`);
     if (!m.ai) m.ai = room.host; // 판을 처음 연 파티의 파티장이 AI 적 계산을 맡음
     return broadcast(room, { t: 'start', seed: m.seed, slot, order, ai: m.ai, sessEnd: m.sess.start + SESSION_MS, now: Date.now(), room: roomInfo(room) });
   }
@@ -308,7 +366,6 @@ setInterval(() => {
 }, TICK);
 
 // 지금 접속 중인 사람 목록 (협동 모드 화면을 연 사람만 서버에 접속함)
-const MAP_NAME = { lab: '지하 연구 시설', canyon: '장거리 협곡' };
 function onlineList() {
   const now = Date.now(), rows = [];
   for (const ws of wss.clients) {
@@ -361,7 +418,7 @@ wss.on('connection', ws => {
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
     try { onMessage(c, msg); } catch (err) { console.error('message error', err); }
   });
-  ws.on('close', () => leaveRoom(c));
+  ws.on('close', () => { if (c.nick && !stopping) logLine(`종료  ${c.nick}  (${Math.round((Date.now() - c.t0) / 60000)}분 머묾, 출격 ${c.raids || 0}회)`); leaveRoom(c); });
   ws.on('error', () => {});
 });
 
@@ -374,4 +431,4 @@ setInterval(() => {
   }
 }, 30000);
 
-server.listen(PORT, () => console.log(`잔해 구역 서버 시작: 포트 ${PORT}`));
+server.listen(PORT, () => { console.log(`잔해 구역 서버 시작: 포트 ${PORT}, 깃허브 기록 ${LOG_TOKEN ? '켜짐' : '꺼짐 (GITHUB_TOKEN 없음)'}`); logLine('서버 시작'); });
