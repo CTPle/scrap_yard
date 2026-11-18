@@ -640,7 +640,8 @@ const SND = (() => {
     // 4) 몸통 울림 (중음)
     burst(p.bodyTau); biq(tmp, 'bp', p.bodyF * jit, 1.6, sr); biq(tmp, 'bp', p.bodyF * jit, 1.6, sr); add(p.body * 3);
     // 5) 노리쇠, 탄피 쇳소리
-    for (const [at, amp, f] of p.mech || []) { const s0 = T0 + Math.floor(at * sr); for (let i = s0; i < n; i++) { const t = (i - s0) / sr, e = Math.exp(-t / 0.008); if (e < 0.001) break; out[i] += amp * e * (Math.sin(2 * Math.PI * f * t) + 0.6 * Math.sin(2 * Math.PI * f * 1.47 * t) + 0.4 * Math.sin(2 * Math.PI * f * 2.31 * t) + 0.5 * rnd()); } }
+    // (순수한 음이 아니라 잡음을 금속처럼 울리게 걸러서 '삑' 소리가 나지 않게 함)
+    for (const [at, amp, f] of p.mech || []) { burst(0.007, 0.0002, at); const t2 = tmp.slice(); biq(tmp, 'bp', f, 5, sr); biq(t2, 'bp', f * 1.47, 5, sr); for (let i = 0; i < n; i++) out[i] += (tmp[i] + t2[i] * 0.7) * amp * 2.2; burst(0.002, 0.0001, at); biq(tmp, 'hp', 2500, 0.7, sr); add(amp * 0.8); }
     // 6) 포화로 묵직하고 단단하게 만든 뒤 크기 맞춤, 끝은 부드럽게 줄임
     let pk = 0; for (let i = 0; i < n; i++) { out[i] = Math.tanh(out[i] * p.drive); pk = Math.max(pk, Math.abs(out[i])); }
     const fo = Math.floor(sr * 0.03); for (let i = 0; i < fo; i++) out[n - 1 - i] *= i / fo;
@@ -731,7 +732,7 @@ const SND = (() => {
     nz(o.bodyDur, o.body * v, 'lowpass', o.bodyCut * (1 - far * 0.75), 0, 0.5, true);
     thump(o.tf, o.tf2 || 38, o.tDur, o.thump * v);
     nz(o.tailDur, o.tail * v, 'lowpass', o.tailCut * (1 - far * 0.5), 0.012, 1.1);
-    if (o.mech && far === 0) for (const [dl, f] of o.mech) { tone('square', f, null, 0.012, 0.06, dl); nz(0.03, 0.12, 'highpass', 3500, dl); }
+    if (o.mech && far === 0) for (const [dl, f] of o.mech) { clank(f, 0.12, dl, 0.04); nz(0.03, 0.12, 'highpass', 3500, dl); }
   }
   const GUN = {
     pistol:   { crack:0.9, body:0.85, bodyCut:2600, bodyDur:0.12, tf:190, tf2:50, tDur:0.09, thump:0.7, tail:0.3, tailDur:0.55, tailCut:1100, mech:[[0.06, 2600]] },
@@ -744,9 +745,18 @@ const SND = (() => {
   function tone(type, f, f2, dur, vol, delay = 0) {
     const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
   }
+  // 쇳소리: 잡음을 좁은 대역으로 울려 금속이 부딪는 소리 (삑 소리 대신)
+  function clank(f, vol, delay = 0, dur = 0.06, q = 7) {
+    const t = ac.currentTime + delay, s = ac.createBufferSource(), b1 = ac.createBiquadFilter(), b2 = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = nb; b1.type = 'bandpass'; b1.frequency.value = f; b1.Q.value = q; b2.type = 'bandpass'; b2.frequency.value = f * 1.5; b2.Q.value = q;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.001); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    s.connect(b1); s.connect(b2); b1.connect(g); b2.connect(g); g.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+  }
+  // 짧은 딸깍 소리
+  function click(vol, delay = 0, hp = 2000, dur = 0.012) { nz(dur, vol, 'highpass', hp, delay); }
   function noise(dur, vol, cut, delay = 0) {
     const t = ac.currentTime + delay, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
     s.buffer = nb; f.type = 'lowpass'; f.frequency.value = cut;
@@ -757,28 +767,30 @@ const SND = (() => {
     pistol:  () => shot('pistol') || gun(GUN.pistol),
     shotgun: () => { if (!shot('shotgun')) gun(GUN.shotgun); setTimeout(() => shot('pump', 0.7), 420); },
     rifle:   () => shot('rifle') || gun(GUN.rifle),
-    empty:   () => tone('square', 1800, null, 0.02, 0.07),
-    reload:  (t) => { tone('square', 900, null, 0.03, 0.08); tone('square', 520, null, 0.05, 0.1, t * 0.55); tone('square', 1100, null, 0.03, 0.09, t * 0.95); },
-    hit:     () => tone('triangle', 1500, null, 0.04, 0.12),
-    kill:    () => { noise(0.28, 0.45, 900); tone('square', 210, 45, 0.22, 0.14); },
-    hurt:    () => { tone('sawtooth', 210, 80, 0.2, 0.2); noise(0.1, 0.2, 1200); },
-    pickup:  () => [660, 880, 1175].forEach((f, i) => tone('triangle', f, null, 0.09, 0.15, i * 0.05)),
+    empty:   () => { click(0.25, 0, 2500); clank(2600, 0.08, 0.004, 0.03); },                                       // 빈 총 딸깍
+    reload:  (t) => { clank(1300, 0.18, 0, 0.05); click(0.2, 0.002, 1500, 0.02);                                      // 탄창 빼기
+                      clank(900, 0.22, t * 0.55, 0.07); nz(0.05, 0.25, 'lowpass', 900, t * 0.55);                     // 탄창 끼우기
+                      clank(1700, 0.2, t * 0.95, 0.05); click(0.25, t * 0.95 + 0.03, 2000, 0.02); },                    // 노리쇠
+    hit:     () => { clank(3200, 0.12, 0, 0.03, 4); },                                                                 // 명중 툭
+    kill:    () => { noise(0.28, 0.45, 900); thump(120, 45, 0.18, 0.35); },
+    hurt:    () => { thump(110, 50, 0.16, 0.5); noise(0.12, 0.3, 1200); },
+    pickup:  () => { nz(0.08, 0.25, 'bandpass', 1800); clank(1100, 0.1, 0.05, 0.05, 4); nz(0.06, 0.2, 'bandpass', 2400, 0.09); },
     eshot:   (v) => shot('enemy', v * 0.85, Math.max(0, Math.min(0.9, 1 - v))) || gun(GUN.enemy, v, Math.max(0, Math.min(0.9, 1 - v))), // 적 총성: 멀수록 작고 둔탁하게, 울림 비중은 커짐
-    wave:    () => { tone('triangle', 440, null, 0.18, 0.2); tone('triangle', 660, null, 0.35, 0.2, 0.18); },
-    clear:   () => [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, null, 0.14, 0.16, i * 0.09)),
+    wave:    () => { tone('sine', 440, null, 0.22, 0.16); tone('sine', 660, null, 0.4, 0.14, 0.18); },
+    clear:   () => [523, 659, 784, 1047].forEach((f, i) => tone('sine', f, null, 0.18, 0.13, i * 0.09)),
     launcher:() => { if (!shot('launcher')) { thump(240, 70, 0.2, 0.9); nz(0.16, 0.6, 'lowpass', 1100, 0, 0.6, true); } },
     boom:    () => { noise(0.8, 0.95, 650); tone('sine', 95, 28, 0.7, 0.8); },
     rail:    () => { tone('sawtooth', 1500, 160, 0.38, 0.22); nz(0.05, 0.8, 'highpass', 2500); nz(0.25, 0.55, 'bandpass', 5000, 0, 0.6); thump(90, 32, 0.35, 0.9); nz(0.9, 0.25, 'lowpass', 900, 0.02, 1); },
     sniper:  () => { if (!shot('sniper')) gun(GUN.sniper); setTimeout(() => shot('bolt', 0.7), 600); },
-    head:    () => { tone('triangle', 1800, null, 0.06, 0.18); tone('triangle', 2400, null, 0.12, 0.15, 0.05); },
-    visor:   () => { tone('square', 1300, 900, 0.07, 0.1); tone('triangle', 3200, null, 0.1, 0.08, 0.02); },
+    head:    () => { clank(3800, 0.2, 0, 0.08, 6); click(0.2, 0, 4000, 0.01); },                                      // 머리 명중 탕
+    visor:   () => { clank(2200, 0.22, 0, 0.12, 9); clank(3400, 0.1, 0.01, 0.1, 9); },                                 // 방탄 면갑 튕김
     shotgun2:() => shot('shotgun2') || gun(GUN.shotgun2),
     charge:  (d) => { tone('sine', 180, 1700, d, 0.14); tone('sawtooth', 90, 420, d, 0.05); },
     alarm:   () => { for (let i = 0; i < 3; i++) { tone('sawtooth', 520, 880, 0.45, 0.13, i * 0.55); tone('sawtooth', 880, 520, 0.08, 0.1, i * 0.55 + 0.45); } },
-    spin:    () => { tone('sawtooth', 120, 420, 0.45, 0.12); },
+    spin:    () => { nz(0.45, 0.25, 'bandpass', 600); thump(80, 160, 0.4, 0.2); },
     bossdie: () => { for (let i = 0; i < 4; i++) { noise(0.35, 0.5, 500, i * 0.16); tone('sine', 110, 40, 0.3, 0.4, i * 0.16); } },
     roar:    () => { tone('sawtooth', 90, 55, 1.0, 0.22); noise(0.8, 0.25, 400); },
-    over:    () => { tone('triangle', 330, 70, 1.2, 0.3); noise(0.8, 0.25, 500); }
+    over:    () => { tone('sine', 330, 70, 1.2, 0.3); noise(0.8, 0.25, 500); }
   };
   return {
     init,
@@ -6150,7 +6162,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.18.2';
+const GAME_VER = 'v1.2.18.3';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
