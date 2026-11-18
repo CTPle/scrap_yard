@@ -307,6 +307,18 @@ setInterval(() => {
   }
 }, TICK);
 
+// 지금 접속 중인 사람 목록 (협동 모드 화면을 연 사람만 서버에 접속함)
+const MAP_NAME = { lab: '지하 연구 시설', canyon: '장거리 협곡' };
+function onlineList() {
+  const now = Date.now(), rows = [];
+  for (const ws of wss.clients) {
+    const c = ws._c; if (!c || !c.nick) continue;
+    const where = c.match ? `출격 중 (${MAP_NAME[c.match.map] || c.match.map})` : c.room ? `파티 대기 (${c.room.players.size}명)` : '로비';
+    rows.push(`- ${c.nick}  ${where}  접속 ${Math.floor((now - c.t0) / 60000)}분째  ${c.ver || ''}`);
+  }
+  return `\n지금 접속 중 (${rows.length}명)\n` + (rows.length ? rows.join('\n') : '(없음)') + '\n';
+}
+
 // ---------- HTTP 와 WebSocket ----------
 const server = http.createServer((req, res) => {
   if (req.url === '/stats') {
@@ -314,7 +326,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     res.end(`이번 달(${usage.month || monthKey()}) 보낸 데이터: 약 ${(usage.bytes / 1048576).toFixed(1)}MB\n` +
       `(서버가 다시 켜지면 0부터 다시 셉니다. 정확한 값은 Render 대시보드에서 확인)\n` +
-      `파티 ${rooms.size}개, 진행 중인 판 ${matches.size}개, 접속 ${players}명, 최대 동시 접속 ${usage.peak}명\n`);
+      `파티 ${rooms.size}개, 진행 중인 판 ${matches.size}개, 접속 ${players}명, 최대 동시 접속 ${usage.peak}명\n` +
+      onlineList());
     return;
   }
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
@@ -333,7 +346,8 @@ const wss = new WebSocketServer({
 });
 
 wss.on('connection', ws => {
-  const c = { id: nextId++, ws, nick: '', room: null, match: null, team: 0, ready: false, down: false, state: null, msgs: 0, msgT: Date.now() };
+  const c = { id: nextId++, ws, nick: '', room: null, match: null, team: 0, ready: false, down: false, state: null, msgs: 0, msgT: Date.now(), t0: Date.now() };
+  ws._c = c;
   usage.peak = Math.max(usage.peak, wss.clients.size);
   ws.on('pong', () => { ws._dead = false; });
   ws.on('message', (data, isBinary) => {
