@@ -2824,77 +2824,220 @@ function toggleZoom() {
 let zoomTipT = 0;
 function showZoom() { zoomTipT = 1.2; }
 const MAIN_CHOICES = [2, 1, 6, 5, 3, 4];
-const gunMetal = std('#2d3036', { metalness:0.6, roughness:0.45 }), gunDark = std('#1b1d21', { metalness:0.5 });
-const gunAmber = std('#e0a030', { metalness:0.3 }), gunWood = std('#6e4a2b', { roughness:0.8 });
+// ---------- 1인칭 총기 모형 ----------
+// 금속(브러시 무늬), 폴리머(오돌토돌), 나무(결) 질감을 얇게 입히고, 무기 장면에만 반사광(환경광)을 줘서 금속 면이 살아 보이게 함
+const GUN_TEX = (() => {
+  const noise = (base, amt, n) => canvasTex2(128, 128, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let i = 0; i < n; i++) { const v = Math.random() < 0.5 ? 0 : 255; g.fillStyle = `rgba(${v},${v},${v},${Math.random() * amt})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 1.5, 1 + Math.random() * 1.5); } });
+  const brushed = canvasTex2(256, 64, (g, w, h) => { g.fillStyle = '#d2d2d2'; g.fillRect(0, 0, w, h); for (let i = 0; i < 260; i++) { const v = Math.random() < 0.5 ? 0 : 255; g.strokeStyle = `rgba(${v},${v},${v},${Math.random() * 0.12})`; g.beginPath(); const y = Math.random() * h; g.moveTo(0, y); g.lineTo(w, y + (Math.random() - 0.5) * 2); g.stroke(); } });
+  const wood = canvasTex2(256, 64, (g, w, h) => { g.fillStyle = '#c08a5c'; g.fillRect(0, 0, w, h); for (let i = 0; i < 70; i++) { g.strokeStyle = `rgba(${60 + Math.random() * 30},${30 + Math.random() * 20},10,${0.15 + Math.random() * 0.3})`; g.lineWidth = 0.5 + Math.random() * 2; g.beginPath(); let y = Math.random() * h; g.moveTo(0, y); for (let x = 0; x <= w; x += 16) { y += (Math.random() - 0.5) * 2.5; g.lineTo(x, y); } g.stroke(); } });
+  return { poly:noise('#d6d6d6', 0.2, 2600), metal:brushed, wood };
+})();
+// 무기 장면 환경광: 위는 밝은 하늘색, 아래는 어두운 바닥, 옆에 조명판 몇 개를 둔 작은 방을 미리 구워 반사에 씀
+(() => {
+  try {
+    const es = new THREE.Scene(), geo = new THREE.SphereGeometry(10, 32, 16), pos = geo.attributes.position, col = [];
+    for (let i = 0; i < pos.count; i++) { const t = (pos.getY(i) / 10 + 1) / 2, c = new THREE.Color('#2a2724').lerp(new THREE.Color('#d9e3ee'), Math.pow(t, 1.4)); col.push(c.r, c.g, c.b); }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    es.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side:THREE.BackSide, vertexColors:true })));
+    for (const [x, y, z, w, h, c] of [[4, 5, -2, 4, 2, '#ffffff'], [-6, 2, 3, 2, 3, '#ffe6c8'], [0, -3, -6, 6, 1, '#8090a0'], [2, 1, 6, 3, 2, '#c8d8ff']]) { const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color:c, side:THREE.DoubleSide })); pl.position.set(x, y, z); pl.lookAt(0, 0, 0); es.add(pl); }
+    const pm = new THREE.PMREMGenerator(renderer); wScene.environment = pm.fromScene(es, 0.04).texture; pm.dispose();
+  } catch (_) {}
+})();
+const gm = (c, o) => std(c, Object.assign({ envMapIntensity:1 }, o));
+const gunMetal = gm('#4a4f57', { metalness:0.75, roughness:0.38, map:GUN_TEX.metal });   // 강철 몸통
+const gunSteel = gm('#8a9098', { metalness:0.9, roughness:0.25, map:GUN_TEX.metal });    // 노리쇠, 방아쇠 같은 밝은 금속
+const gunDark = gm('#363a40', { metalness:0.12, roughness:0.75, map:GUN_TEX.poly });     // 폴리머
+const gunBlack = gm('#1c1e21', { metalness:0.35, roughness:0.55 });                      // 레일, 작은 부품
+const gunAmber = gm('#e6a632', { metalness:0.2, roughness:0.5, map:GUN_TEX.poly });      // 주황 포인트 (무기 구분색)
+const gunWood = gm('#8f5e36', { metalness:0.05, roughness:0.5, map:GUN_TEX.wood });
+const gunRubber = gm('#121314', { metalness:0, roughness:0.95 });
+const gunBrass = gm('#c99a3c', { metalness:0.85, roughness:0.3 });
+const gunHole = new THREE.MeshBasicMaterial({ color:'#050506' });                         // 총구, 구멍
 const vm = new THREE.Group(); wCam.add(vm);
 const railCoilMat = new THREE.MeshBasicMaterial({ color:'#6ff2ff' });
 const RAIL_IDLE = new THREE.Color('#3aa9b8'), RAIL_FULL = new THREE.Color('#f0ffff'), RAIL_READY = new THREE.Color('#6ff2ff');
 const models = [];
 (() => {
+  // 상자 부품 (r: x, y, z 회전)
+  const B = (g, mat, sc, p, r) => { const m = part(g, BOX, mat, sc, p); if (r) m.rotation.set(r[0] || 0, r[1] || 0, r[2] || 0); return m; };
+  // 원기둥 부품: 기본은 앞뒤(z) 방향, 'x' 는 좌우, 'y' 는 위아래
+  const C = (g, mat, rad, len, p, axis = 'z', seg = 18) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, len, seg), mat); m.position.set(p[0], p[1], p[2]);
+    if (axis === 'z') m.rotation.x = Math.PI / 2; else if (axis === 'x') m.rotation.z = Math.PI / 2;
+    g.add(m); return m;
+  };
+  // 피카티니 레일: y 는 레일 바닥, 높이 0.012
+  const rail = (g, x, y, z0, z1, w = 0.024) => {
+    B(g, gunBlack, [w, 0.006, z1 - z0], [x, y + 0.003, (z0 + z1) / 2]);
+    for (let z = z0 + 0.005; z < z1 - 0.003; z += 0.01) B(g, gunBlack, [w + 0.004, 0.006, 0.005], [x, y + 0.009, z]);
+  };
+  const guard = (g, y, z0, z1, mat = gunBlack) => { B(g, mat, [0.02, 0.008, z1 - z0], [0, y, (z0 + z1) / 2]); B(g, mat, [0.02, 0.04, 0.008], [0, y + 0.02, z0]); };
+  const trig = (g, y, z) => B(g, gunSteel, [0.008, 0.032, 0.008], [0, y, z], [0.25]);
+
+  // ---- 0 권총: 슬라이드 톱니, 배출구, 총열 끝, 방아쇠울, 손잡이 패널, 탄창 바닥판 ----
   const p = new THREE.Group();
-  part(p, BOX, gunMetal, [0.08, 0.09, 0.36], [0, 0.03, -0.18]);
-  part(p, BOX, gunDark, [0.085, 0.04, 0.3], [0, 0.085, -0.17]);
-  const grip = part(p, BOX, gunAmber, [0.07, 0.19, 0.09], [0, -0.08, -0.03]); grip.rotation.x = 0.25;
-  part(p, BOX, gunDark, [0.02, 0.03, 0.02], [0, 0.12, -0.3]);
+  B(p, gunMetal, [0.084, 0.05, 0.33], [0, 0.08, -0.165]);
+  for (let k = 0; k < 7; k++) for (const sx of [-1, 1]) B(p, gunBlack, [0.003, 0.034, 0.004], [sx * 0.0425, 0.08, -0.025 - k * 0.009]);
+  for (let k = 0; k < 4; k++) for (const sx of [-1, 1]) B(p, gunBlack, [0.003, 0.03, 0.004], [sx * 0.0425, 0.08, -0.27 - k * 0.009]);
+  B(p, gunBlack, [0.004, 0.024, 0.065], [0.041, 0.09, -0.13]); B(p, gunBrass, [0.004, 0.014, 0.034], [0.0415, 0.09, -0.13]);
+  C(p, gunSteel, 0.016, 0.03, [0, 0.075, -0.338]); C(p, gunHole, 0.009, 0.005, [0, 0.075, -0.354]);
+  B(p, gunDark, [0.078, 0.04, 0.29], [0, 0.036, -0.165]);
+  B(p, gunDark, [0.07, 0.03, 0.12], [0, 0.008, -0.25]);
+  for (let k = 0; k < 3; k++) B(p, gunBlack, [0.072, 0.005, 0.008], [0, -0.008, -0.22 - k * 0.025]);
+  guard(p, -0.035, -0.112, -0.04, gunDark); trig(p, -0.008, -0.07);
+  B(p, gunBlack, [0.004, 0.01, 0.045], [-0.041, 0.05, -0.15]);                       // 슬라이드 멈치
+  B(p, gunBlack, [0.02, 0.026, 0.016], [0, 0.07, 0.006]);                             // 공이치기
+  B(p, gunDark, [0.064, 0.02, 0.045], [0, 0.026, 0.018], [-0.3]);                     // 손등 받침
+  B(p, gunAmber, [0.07, 0.19, 0.09], [0, -0.08, -0.03], [0.25]);
+  for (const sx of [-1, 1]) B(p, gunDark, [0.004, 0.13, 0.07], [sx * 0.0362, -0.085, -0.03], [0.25]);
+  B(p, gunBlack, [0.074, 0.018, 0.095], [0, -0.178, -0.055], [0.25]);
   models.push(p);
+
+  // ---- 1 펌프 산탄총: 둥근 총열과 리브, 탄창관, 홈 파인 나무 펌프, 배출구, 개머리 고무판 ----
   const s = new THREE.Group();
-  part(s, BOX, gunMetal, [0.07, 0.07, 0.85], [0, 0.03, -0.5]);
-  part(s, BOX, gunMetal, [0.06, 0.06, 0.8], [0, -0.04, -0.47]);
-  part(s, BOX, gunWood, [0.1, 0.1, 0.24], [0, -0.03, -0.55]);
-  part(s, BOX, gunDark, [0.11, 0.14, 0.3], [0, 0.0, -0.05]);
-  const st = part(s, BOX, gunWood, [0.09, 0.14, 0.34], [0, -0.06, 0.2]); st.rotation.x = -0.15;
+  B(s, gunMetal, [0.105, 0.13, 0.3], [0, 0.005, -0.05]);
+  rail(s, 0, 0.07, -0.18, 0.06, 0.02);
+  B(s, gunBlack, [0.004, 0.045, 0.1], [0.0535, 0.02, -0.07]); B(s, gunSteel, [0.004, 0.03, 0.07], [0.0545, 0.02, -0.07]);
+  B(s, gunBlack, [0.06, 0.004, 0.12], [0, -0.0605, -0.08]);
+  C(s, gunBlack, 0.008, 0.112, [0, -0.035, 0.06], 'x', 10);
+  guard(s, -0.11, -0.03, 0.07); trig(s, -0.08, 0.01);
+  C(s, gunMetal, 0.03, 0.74, [0, 0.033, -0.56]);
+  B(s, gunMetal, [0.012, 0.004, 0.72], [0, 0.066, -0.56]);
+  for (let z = -0.25; z > -0.9; z -= 0.06) B(s, gunMetal, [0.008, 0.006, 0.008], [0, 0.063, z]);
+  C(s, gunSteel, 0.032, 0.02, [0, 0.033, -0.925]); C(s, gunHole, 0.022, 0.005, [0, 0.033, -0.937]);
+  C(s, gunMetal, 0.026, 0.66, [0, -0.035, -0.53]); C(s, gunSteel, 0.029, 0.04, [0, -0.035, -0.86]);
+  B(s, gunBlack, [0.03, 0.09, 0.025], [0, 0.0, -0.8]);
+  B(s, gunWood, [0.09, 0.085, 0.26], [0, -0.03, -0.55]);
+  for (let k = 0; k < 7; k++) for (const sx of [-1, 1]) B(s, gunBlack, [0.003, 0.06, 0.006], [sx * 0.0455, -0.03, -0.46 - k * 0.03]);
+  B(s, gunWood, [0.085, 0.13, 0.34], [0, -0.06, 0.2], [-0.15]);
+  B(s, gunRubber, [0.09, 0.145, 0.03], [0, -0.035, 0.383], [-0.15]);
+  C(s, gunSteel, 0.01, 0.004, [0, -0.11, 0.3], 'y', 10);                               // 멜빵 고리
   models.push(s);
+
+  // ---- 2 소총: 위아래 총몸, 레일, 통풍구 핸드가드, 가스 블록, 소염기, 드럼 탄창, 조절식 개머리 ----
   const r = new THREE.Group();
-  part(r, BOX, gunMetal, [0.09, 0.13, 0.55], [0, 0.02, -0.25]);
-  part(r, BOX, gunDark, [0.04, 0.04, 0.35], [0, 0.04, -0.68]);
-  const rDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.09, 16), gunAmber); rDrum.rotation.z = Math.PI / 2; rDrum.position.set(0, -0.17, -0.28); r.add(rDrum);
-  const drumCap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.1, 10), gunDark); drumCap.rotation.z = Math.PI / 2; drumCap.position.set(0, -0.17, -0.28); r.add(drumCap);
-  part(r, BOX, gunDark, [0.05, 0.08, 0.07], [0, -0.06, -0.28]);
-  part(r, BOX, gunDark, [0.05, 0.06, 0.16], [0, 0.12, -0.22]);
-  part(r, BOX, gunDark, [0.08, 0.12, 0.25], [0, -0.01, 0.12]);
-  const gp = part(r, BOX, gunDark, [0.06, 0.15, 0.07], [0, -0.1, -0.03]); gp.rotation.x = 0.3;
+  B(r, gunMetal, [0.084, 0.07, 0.36], [0, 0.055, -0.15]);
+  B(r, gunMetal, [0.08, 0.065, 0.25], [0, -0.012, -0.12]);
+  B(r, gunBlack, [0.05, 0.04, 0.34], [0, 0.11, -0.2]); rail(r, 0, 0.13, -0.37, -0.03, 0.03);
+  B(r, gunDark, [0.09, 0.085, 0.3], [0, 0.045, -0.48]); rail(r, 0, 0.0875, -0.62, -0.38, 0.026);
+  for (let k = 0; k < 5; k++) for (const sx of [-1, 1]) B(r, gunBlack, [0.003, 0.02, 0.035], [sx * 0.0455, 0.05, -0.38 - k * 0.05]);
+  for (let k = 0; k < 4; k++) B(r, gunBlack, [0.06, 0.003, 0.03], [0, 0.002, -0.4 - k * 0.06]);
+  B(r, gunBlack, [0.035, 0.035, 0.03], [0, 0.043, -0.655]);
+  C(r, gunMetal, 0.014, 0.16, [0, 0.04, -0.71]);
+  C(r, gunBlack, 0.02, 0.06, [0, 0.04, -0.795], 'z', 8);
+  for (let k = 0; k < 4; k++) B(r, gunHole, [0.042, 0.004, 0.035], [0, 0.04, -0.805], [0, 0, k * Math.PI / 4]);
+  C(r, gunHole, 0.009, 0.004, [0, 0.04, -0.826]);
+  B(r, gunBlack, [0.05, 0.014, 0.025], [0, 0.083, 0.035]);                             // 장전 손잡이
+  B(r, gunBlack, [0.003, 0.03, 0.09], [0.0425, 0.055, -0.13]);                         // 배출구 덮개
+  C(r, gunSteel, 0.008, 0.012, [0.046, 0.06, -0.06], 'x', 10);                          // 노리쇠 전진기
+  B(r, gunBlack, [0.006, 0.015, 0.015], [0.042, -0.01, -0.2]);                          // 탄창 멈치
+  C(r, gunAmber, 0.13, 0.09, [0, -0.17, -0.28], 'x', 32);
+  for (const sx of [-1, 1]) {
+    { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.127, 0.006, 6, 40), gunDark); ring.rotation.y = Math.PI / 2; ring.position.set(sx * 0.045, -0.17, -0.28); r.add(ring); }  // 드럼 테두리
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + 0.3; B(r, gunDark, [0.004, 0.055, 0.012], [sx * 0.052, -0.17 + Math.cos(a) * 0.095, -0.28 + Math.sin(a) * 0.095], [a]); }
+  }
+  C(r, gunDark, 0.06, 0.1, [0, -0.17, -0.28], 'x', 16);
+  B(r, gunBlack, [0.004, 0.06, 0.016], [0.0465, -0.17, -0.2]); B(r, gunBrass, [0.004, 0.05, 0.01], [0.047, -0.17, -0.2]);   // 남은 탄 창
+  B(r, gunDark, [0.05, 0.08, 0.07], [0, -0.06, -0.28]);
+  B(r, gunDark, [0.06, 0.15, 0.07], [0, -0.1, -0.03], [0.3]);
+  guard(r, -0.075, -0.145, -0.055, gunMetal); trig(r, -0.058, -0.1);
+  C(r, gunBlack, 0.022, 0.16, [0, 0.03, 0.1]);
+  B(r, gunDark, [0.07, 0.11, 0.17], [0, 0.0, 0.2]); B(r, gunDark, [0.06, 0.025, 0.14], [0, 0.065, 0.2]);
+  B(r, gunRubber, [0.074, 0.12, 0.02], [0, -0.003, 0.293]);
   models.push(r);
+
+  // ---- 3 유탄발사기: 홈 고리가 있는 굵은 총열, 홈 파인 6연발 회전 탄창, 위 연결대, 앞 손잡이, 골격 개머리 ----
   const gl = new THREE.Group();
-  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.5, 12), gunMetal); bar.rotation.x = Math.PI / 2; bar.position.set(0, 0.03, -0.36); gl.add(bar);
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.2, 8), gunAmber); drum.rotation.x = Math.PI / 2; drum.position.set(0, -0.02, -0.08); gl.add(drum);
-  part(gl, BOX, gunDark, [0.1, 0.1, 0.3], [0, 0.0, 0.12]);
-  const gg = part(gl, BOX, gunDark, [0.06, 0.16, 0.07], [0, -0.12, 0.05]); gg.rotation.x = 0.3;
-  part(gl, BOX, gunDark, [0.05, 0.12, 0.04], [0, 0.1, -0.2]);
+  C(gl, gunMetal, 0.075, 0.5, [0, 0.03, -0.36], 'z', 28);
+  for (let k = 0; k < 5; k++) C(gl, gunBlack, 0.077, 0.012, [0, 0.03, -0.2 - k * 0.08], 'z', 28);
+  C(gl, gunSteel, 0.079, 0.03, [0, 0.03, -0.6], 'z', 28); C(gl, gunHole, 0.058, 0.005, [0, 0.03, -0.616], 'z', 24);
+  C(gl, gunAmber, 0.12, 0.2, [0, -0.02, -0.08], 'z', 32);
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + Math.PI / 6; B(gl, gunDark, [0.032, 0.012, 0.17], [Math.sin(a) * 0.116, -0.02 + Math.cos(a) * 0.116, -0.08], [0, 0, -a]); }
+  C(gl, gunSteel, 0.02, 0.24, [0, -0.02, -0.08]);
+  B(gl, gunBlack, [0.045, 0.02, 0.26], [0, 0.11, -0.05]);
+  B(gl, gunDark, [0.05, 0.12, 0.04], [0, 0.1, -0.2]);
+  B(gl, gunDark, [0.1, 0.1, 0.3], [0, 0.0, 0.12]);
+  B(gl, gunDark, [0.06, 0.16, 0.07], [0, -0.12, 0.05], [0.3]);
+  guard(gl, -0.085, 0.0, 0.08); trig(gl, -0.065, 0.03);
+  B(gl, gunBlack, [0.04, 0.03, 0.12], [0, -0.06, -0.38]); B(gl, gunDark, [0.04, 0.12, 0.045], [0, -0.13, -0.38], [0.1]);
+  for (let k = 0; k < 4; k++) B(gl, gunBlack, [0.042, 0.004, 0.047], [0, -0.1 - k * 0.025, -0.38 + k * 0.0025], [0.1]);
+  for (const sx of [-1, 1]) B(gl, gunBlack, [0.012, 0.02, 0.22], [sx * 0.03, 0.02, 0.36]);
+  B(gl, gunRubber, [0.075, 0.13, 0.025], [0, -0.01, 0.47]);
   models.push(gl);
+
+  // ---- 4 레일건: 기존 구조(코일, 충전 구슬, 옆면 게이지)는 그대로 두고 방열판, 축전지, 이음선, 개머리를 더함 ----
   const rg = new THREE.Group(), cyan = railCoilMat;
-  part(rg, BOX, gunDark, [0.1, 0.14, 0.6], [0, 0.01, -0.22]);
-  part(rg, BOX, gunMetal, [0.025, 0.05, 0.62], [-0.035, 0.03, -0.68]);
-  part(rg, BOX, gunMetal, [0.025, 0.05, 0.62], [0.035, 0.03, -0.68]);
-  for (let i = 0; i < 4; i++) part(rg, BOX, cyan, [0.12, 0.03, 0.03], [0, 0.03, -0.45 - i * 0.1]);
-  part(rg, BOX, cyan, [0.02, 0.1, 0.3], [0.056, 0.0, -0.2]);
-  const rgg = part(rg, BOX, gunMetal, [0.06, 0.16, 0.07], [0, -0.12, -0.02]); rgg.rotation.x = 0.3;
-  part(rg, BOX, gunDark, [0.05, 0.06, 0.2], [0, 0.11, -0.15]);
+  B(rg, gunDark, [0.1, 0.14, 0.6], [0, 0.01, -0.22]);
+  B(rg, gunMetal, [0.025, 0.05, 0.62], [-0.035, 0.03, -0.68]);
+  B(rg, gunMetal, [0.025, 0.05, 0.62], [0.035, 0.03, -0.68]);
+  for (const sx of [-1, 1]) B(rg, gunSteel, [0.03, 0.06, 0.02], [sx * 0.035, 0.03, -0.985]);
+  for (let i = 0; i < 4; i++) B(rg, cyan, [0.12, 0.03, 0.03], [0, 0.03, -0.45 - i * 0.1]);
+  B(rg, cyan, [0.02, 0.1, 0.3], [0.056, 0.0, -0.2]);
+  for (const z of [-0.06, -0.36, -0.48]) B(rg, gunBlack, [0.102, 0.142, 0.004], [0, 0.01, z]);              // 몸통 이음선
+  for (let k = 0; k < 6; k++) B(rg, gunMetal, [0.09, 0.022, 0.006], [0, 0.09, -0.37 - k * 0.022]);         // 방열판
+  for (const sx of [-1, 1]) { C(rg, gunSteel, 0.014, 0.08, [sx * 0.032, 0.094, -0.3]); for (const z of [-0.28, -0.32]) C(rg, cyan, 0.0155, 0.007, [sx * 0.032, 0.094, z]); }  // 축전지
+  C(rg, gunBlack, 0.008, 0.3, [0.044, -0.065, -0.42]);                                                    // 전선
+  B(rg, gunMetal, [0.06, 0.16, 0.07], [0, -0.12, -0.02], [0.3]);
+  guard(rg, -0.085, -0.075, 0.0); trig(rg, -0.065, -0.04);
+  B(rg, gunDark, [0.05, 0.06, 0.2], [0, 0.11, -0.15]);
+  B(rg, gunDark, [0.07, 0.1, 0.18], [0, -0.01, 0.17]); B(rg, gunRubber, [0.075, 0.11, 0.02], [0, -0.01, 0.27]);
   const orb = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color:'#9ff6ff', transparent:true, opacity:0.85, depthWrite:false }));
   orb.position.set(0, 0.03, -0.96); orb.scale.setScalar(0.001); rg.add(orb); rg.userData.orb = orb;
   // 총 왼쪽 옆면 충전 게이지: 검은 틀 안에 칸 8개. 뒤쪽 칸부터 앞쪽으로 차오름
-  part(rg, BOX, gunDark, [0.01, 0.052, 0.37], [-0.054, -0.005, -0.2]);
+  part(rg, BOX, gunBlack, [0.01, 0.052, 0.37], [-0.054, -0.005, -0.2]);
   rg.userData.cells = [];
   for (let i = 0; i < 8; i++) {
     const c = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color:'#123038' }));
     c.scale.set(0.006, 0.034, 0.03); c.position.set(-0.06, -0.005, -0.04 - i * 0.043); rg.add(c); rg.userData.cells.push(c);
   }
   models.push(rg);
+
+  // ---- 5 저격총: 둥근 기관부와 노리쇠 손잡이, 섀시와 통풍구, 홈 파인 총열, 제동기, 접은 양각대, 볼받침 ----
   const sn = new THREE.Group();
-  part(sn, BOX, gunDark, [0.08, 0.11, 0.55], [0, 0.0, -0.22]);
-  part(sn, BOX, gunMetal, [0.035, 0.035, 0.6], [0, 0.03, -0.78]);
-  part(sn, BOX, gunDark, [0.02, 0.05, 0.02], [0, 0.07, -0.2]);
-  const sst = part(sn, BOX, gunWood, [0.08, 0.15, 0.34], [0, -0.05, 0.18]); sst.rotation.x = -0.12;
-  const sgp = part(sn, BOX, gunDark, [0.06, 0.15, 0.07], [0, -0.11, -0.02]); sgp.rotation.x = 0.3;
-  part(sn, BOX, gunAmber, [0.085, 0.03, 0.2], [0, -0.04, -0.35]);
+  B(sn, gunDark, [0.07, 0.05, 0.47], [0, -0.01, -0.18]);
+  C(sn, gunMetal, 0.032, 0.36, [0, 0.03, -0.22]);
+  rail(sn, 0, 0.062, -0.36, -0.08, 0.028);
+  C(sn, gunSteel, 0.022, 0.08, [0, 0.03, 0.0]);
+  C(sn, gunSteel, 0.007, 0.075, [0.045, 0.03, -0.06], 'x', 10);
+  part(sn, SPH, gunBlack, [0.016, 0.016, 0.016], [0.085, 0.024, -0.06]);
+  B(sn, gunDark, [0.05, 0.08, 0.1], [0, -0.07, -0.22]); B(sn, gunAmber, [0.054, 0.014, 0.104], [0, -0.112, -0.22]);
+  B(sn, gunDark, [0.075, 0.08, 0.36], [0, -0.005, -0.6]);
+  for (let k = 0; k < 4; k++) for (const sx of [-1, 1]) B(sn, gunBlack, [0.003, 0.025, 0.05], [sx * 0.0385, -0.005, -0.47 - k * 0.08]);
+  B(sn, gunAmber, [0.078, 0.014, 0.34], [0, -0.042, -0.6]);
+  C(sn, gunMetal, 0.017, 0.6, [0, 0.03, -0.68], 'z', 16);
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; B(sn, gunBlack, [0.004, 0.004, 0.15], [Math.sin(a) * 0.016, 0.03 + Math.cos(a) * 0.016, -0.88]); }
+  B(sn, gunBlack, [0.05, 0.04, 0.07], [0, 0.03, -0.995]);
+  for (let k = 0; k < 3; k++) for (const sx of [-1, 1]) B(sn, gunHole, [0.003, 0.025, 0.012], [sx * 0.0255, 0.03, -0.975 - k * 0.022]);
+  C(sn, gunHole, 0.012, 0.004, [0, 0.03, -1.031]);
+  for (const sx of [-1, 1]) B(sn, gunBlack, [0.012, 0.012, 0.2], [sx * 0.018, -0.052, -0.66]);
+  B(sn, gunBlack, [0.05, 0.02, 0.03], [0, -0.05, -0.77]);
+  B(sn, gunDark, [0.06, 0.15, 0.07], [0, -0.11, -0.02], [0.3]);
+  guard(sn, -0.075, -0.1, -0.02); trig(sn, -0.055, -0.065);
+  B(sn, gunWood, [0.08, 0.15, 0.34], [0, -0.05, 0.18], [-0.12]);
+  B(sn, gunDark, [0.06, 0.02, 0.16], [0, 0.035, 0.2]);
+  B(sn, gunRubber, [0.085, 0.16, 0.025], [0, -0.03, 0.362], [-0.12]);
   models.push(sn);
+
+  // ---- 6 반자동 산탄총: 상자형 총몸과 옆 줄무늬, 레일, 구멍 뚫린 방열 덮개, 홈 파인 앞손잡이, 줄 무늬 상자 탄창 ----
   const sa = new THREE.Group();
-  part(sa, BOX, gunDark, [0.11, 0.15, 0.42], [0, 0.0, -0.12]);
-  part(sa, BOX, gunMetal, [0.07, 0.07, 0.55], [0, 0.04, -0.55]);
-  part(sa, BOX, gunMetal, [0.05, 0.05, 0.45], [0, -0.03, -0.5]);
-  const sam = part(sa, BOX, gunAmber, [0.08, 0.22, 0.12], [0, -0.17, -0.18]); sam.rotation.x = 0.12;
-  const sag = part(sa, BOX, gunDark, [0.06, 0.15, 0.07], [0, -0.12, 0.03]); sag.rotation.x = 0.3;
-  part(sa, BOX, gunDark, [0.08, 0.12, 0.28], [0, -0.02, 0.24]);
-  part(sa, BOX, gunDark, [0.02, 0.04, 0.2], [0, 0.1, -0.15]);
+  B(sa, gunDark, [0.11, 0.15, 0.42], [0, 0.0, -0.12]);
+  for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) B(sa, gunBlack, [0.003, 0.01, 0.36], [sx * 0.0555, -0.045 + k * 0.03, -0.12]);
+  B(sa, gunBlack, [0.03, 0.02, 0.3], [0, 0.085, -0.13]); rail(sa, 0, 0.095, -0.28, 0.02, 0.03);
+  B(sa, gunSteel, [0.03, 0.012, 0.012], [-0.07, 0.04, -0.2]);
+  B(sa, gunBlack, [0.004, 0.04, 0.09], [0.0555, 0.03, -0.12]); B(sa, gunAmber, [0.004, 0.022, 0.045], [0.056, 0.028, -0.12]);
+  B(sa, gunMetal, [0.07, 0.07, 0.5], [0, 0.04, -0.58]);
+  for (let k = 0; k < 7; k++) for (const sx of [-1, 1]) B(sa, gunHole, [0.003, 0.022, 0.03], [sx * 0.0355, 0.045, -0.38 - k * 0.065]);
+  C(sa, gunBlack, 0.032, 0.05, [0, 0.04, -0.85]); C(sa, gunHole, 0.02, 0.005, [0, 0.04, -0.876]);
+  B(sa, gunDark, [0.08, 0.06, 0.3], [0, -0.035, -0.5]);
+  for (let k = 0; k < 6; k++) for (const sx of [-1, 1]) B(sa, gunBlack, [0.003, 0.045, 0.008], [sx * 0.0405, -0.035, -0.4 - k * 0.04]);
+  const mA = 0.12, mAt = t => [0, -0.17 + t * Math.cos(mA), -0.18 + t * Math.sin(mA)];
+  B(sa, gunAmber, [0.08, 0.22, 0.12], mAt(0), [mA]);
+  for (const t of [-0.06, -0.02, 0.02, 0.06]) B(sa, gunDark, [0.084, 0.006, 0.124], mAt(t), [mA]);
+  B(sa, gunBlack, [0.086, 0.016, 0.128], mAt(-0.112), [mA]);
+  B(sa, gunDark, [0.06, 0.15, 0.07], [0, -0.12, 0.03], [0.3]);
+  guard(sa, -0.09, -0.07, 0.01); trig(sa, -0.07, -0.03);
+  B(sa, gunDark, [0.08, 0.12, 0.28], [0, -0.02, 0.24]); B(sa, gunBlack, [0.082, 0.02, 0.2], [0, 0.045, 0.22]);
+  B(sa, gunRubber, [0.085, 0.13, 0.025], [0, -0.02, 0.39]);
   models.push(sa);
   models.forEach(m => { m.visible = false; vm.add(m); });
 })();
@@ -5731,7 +5874,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.16.2';
+const GAME_VER = 'v1.2.17';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
