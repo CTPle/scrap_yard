@@ -713,7 +713,7 @@ const SND = (() => {
 // ---------- 렌더러와 장면 ----------
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 고해상도 화면에서 픽셀 수가 4배가 되지 않게 1.5배까지만
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.autoClear = false;
 const scene = new THREE.Scene();
@@ -734,7 +734,7 @@ const wKey = new THREE.DirectionalLight('#ffe0b8', 0.8); wKey.position.set(1, 2,
 let lowSpec = 0;
 function setLowSpec(n) {
   lowSpec = n;
-  renderer.setPixelRatio(n === 0 ? Math.min(devicePixelRatio, 2) : n === 1 ? 0.6 : 0.4);
+  renderer.setPixelRatio(n === 0 ? Math.min(devicePixelRatio, 1.5) : n === 1 ? 0.6 : 0.4);
   if (typeof sun !== 'undefined' && n > 0) sun.castShadow = false;
   if (typeof resize === 'function') resize();
 }
@@ -932,7 +932,7 @@ function addLamp(x, z, light) {
   pole.position.set(x, 2.8, z); level.add(pole);
   const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.2, 0.4), new THREE.MeshBasicMaterial({ color:'#ffd49a' }));
   lamp.position.set(x, 5.65, z); level.add(lamp);
-  if (light) { const l = new THREE.PointLight('#ffb070', 1.2, 40, 2); l.position.set(x, 5.5, z); level.add(l); }
+  if (light) addPointLight('#ffb070', 1.2, 40, x, 5.5, z);   // 조명 묶음을 쓰는 맵에서는 가까운 것만 실제로 켜짐
 }
 // 낮은 엄폐물(방벽, 작은 상자)은 모든 맵에서 1.3m 로 통일: 앉으면 완전히 가려지고, 서면 넘겨 쏠 수 있고, 점프로 올라갈 수 있는 높이
 const COVER_H = 1.3;
@@ -1964,7 +1964,7 @@ function canyonScenery() {
       }
     }
     grid(ZS, RS + 1, idx, sd > 0);
-    const m = meshFrom(pos, col, uv, idx, cliffMat); m.castShadow = true; m.receiveShadow = true;
+    const m = meshFrom(pos, col, uv, idx, cliffMat); m.receiveShadow = true;   // 해가 거의 머리 위라 절벽 그림자는 거의 안 보여서 그리지 않음
   }
   // ---- 바깥 산: 절벽 꼭대기에서 이어져 멀어질수록 높아지는 지형 (멀리는 안개에 흐려짐) ----
   const peak = (x, z) => { const d = Math.max(0, Math.abs(x) - lipX); const ridge = 1 - Math.abs(fbm(x * 0.0045 + 20, z * 0.0045, 5) * 2 - 1); return top(z) + 0.4 + d * 0.22 + Math.pow(ridge, 2.2) * 230 * Math.min(1, d / 140) + fbm(x * 0.03, z * 0.03, 3) * 6 * Math.min(1, d / 20); };
@@ -2002,10 +2002,11 @@ function canyonScenery() {
       if (h - top(z) > 50 || fbm(x * 0.012, z * 0.012, 2) < 0.42) continue;   // 높은 곳과 빈터에는 나무 없음
       tree(x, z, h - 0.3, 2.2 + rnd() * 2.6);
     }
-    for (const [k, geo, mat] of [['a', cone, leafA], ['b', cone, leafB], ['t', trunk, bark]]) {
-      const im = new THREE.InstancedMesh(geo, mat, L[k].length);
-      L[k].forEach((v, i) => { dm.position.set(v[0], v[1], v[2]); dm.scale.set(v[3], v[4], v[5]); dm.rotation.set(0, rnd() * 6, 0); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); });
-      im.frustumCulled = false; im.castShadow = true; level.add(im);
+    for (const [k, geo, mat] of [['a', cone, leafA], ['b', cone, leafB], ['t', trunk, bark]]) for (const ch of [...new Set(L[k].map(v => Math.floor(v[2] / 200)))]) {
+      const part = L[k].filter(v => Math.floor(v[2] / 200) === ch), g2 = geo.clone(), im = new THREE.InstancedMesh(g2, mat, part.length);
+      part.forEach((v, i) => { dm.position.set(v[0], v[1], v[2]); dm.scale.set(v[3], v[4], v[5]); dm.rotation.set(0, rnd() * 6, 0); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); });
+      g2.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 60, ch * 200 + 100), 220);
+      level.add(im);
     }
   }
   // ---- 협곡 바닥: 절벽 밑 낙석, 풀 덤불, 자갈 (충돌 없음, 낮아서 시야를 가리지 않음) ----
@@ -2033,10 +2034,15 @@ function canyonScenery() {
       const hgt = 0.25 + rnd() * 0.35, k = rnd() < 0.6 ? 0 : 1;
       for (let b = 0; b < 4; b++) blades[k].push([x + (rnd() - 0.5) * 0.35, hgt / 2, z + (rnd() - 0.5) * 0.35, 0.05, hgt, 0.05, rnd() * 6, (rnd() - 0.5) * 0.6]);
     }
+    // 120m 구역마다 따로 묶고 구역 크기의 경계구를 줘서, 화면 밖 구역은 그리지 않게 함
     const inst = (geo, mat, list, shadow) => {
-      const im = new THREE.InstancedMesh(geo, mat, list.length);
-      list.forEach((v, i) => { dm.position.set(v[0], v[1], v[2]); dm.scale.set(v[3], v[4], v[5]); dm.rotation.set(v[7], v[6], v[7] * 0.7); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); });
-      im.frustumCulled = false; im.castShadow = shadow; im.receiveShadow = true; level.add(im);
+      const chunks = new Map(); for (const v of list) { const k = Math.floor(v[2] / 120); if (!chunks.has(k)) chunks.set(k, []); chunks.get(k).push(v); }
+      for (const [k, part] of chunks) {
+        const g2 = geo.clone(), im = new THREE.InstancedMesh(g2, mat, part.length);
+        part.forEach((v, i) => { dm.position.set(v[0], v[1], v[2]); dm.scale.set(v[3], v[4], v[5]); dm.rotation.set(v[7], v[6], v[7] * 0.7); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); });
+        g2.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, k * 120 + 60), 90);
+        im.castShadow = false; im.receiveShadow = true; level.add(im);
+      }
     };
     inst(rockG, stoneM, stones, true); inst(blade, grassM[0], blades[0], false); inst(blade, grassM[1], blades[1], false);
   };
@@ -2410,7 +2416,7 @@ const MAPS = {
     tag:'원거리 교전, 거점 돌파',
     // 밝은 낮 하늘: 주변광을 올리고 안개를 밝은 하늘색으로 해서 멀리까지 잘 보이게 함
     light:{ bg:'#b3c2cf', hemi:1.0, sky:'#dbe7f2', ground:'#6c5e4d', sun:1.2 },
-    fog:[200, 560], shadow:CANYON_BZ + 5, sun:[10, 110, 4],
+    fog:[200, 560], shadow:CANYON_BZ + 5, sun:[10, 110, 4], lightPool:4, shadowFollow:75,
     ai:{ gNear:26, gFar:48, bNear:20, bFar:40, dNear:22, dFar:36, see:135, shotMul:1.35, spreadMul:0.45, life:5 },
     build() {
       BX = CANYON_BX; BZ = CANYON_BZ;
@@ -2521,6 +2527,7 @@ function buildLevel(key) {
   level = new THREE.Group(); scene.add(level);
   mapKey = key; M = MAPS[key]; AI = M.ai; PANEL_Y = M.panelY || 5.95;
   M.build();
+  mergeStatic(level);
   FY = 0; BASE_START = START;
   // 조명 묶음: 다층 맵은 조명 LIGHT_POOL 개만 만들고 플레이어 근처 자리로 옮겨 다님
   LIGHT_POOL.length = 0;
@@ -2533,7 +2540,8 @@ function buildLevel(key) {
   buildNav();
   scene.fog.near = M.fog[0]; scene.fog.far = M.fog[1];
   sun.position.set(...M.sun);
-  Object.assign(sun.shadow.camera, { left:-M.shadow, right:M.shadow, top:M.shadow, bottom:-M.shadow, near:1, far:M.shadow * 2 + 60 });
+  { const r = M.shadowFollow || M.shadow; Object.assign(sun.shadow.camera, { left:-r, right:r, top:r, bottom:-r, near:1, far:M.shadowFollow ? M.sun[1] * 2 + 60 : M.shadow * 2 + 60 }); }
+  if (!M.shadowFollow) { sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld(); }
   sun.shadow.camera.updateProjectionMatrix();
 }
 // 1m 격자 위에서 플레이어까지의 거리를 BFS로 계산해 적이 문과 경사로를 따라 이동하게 함
@@ -2541,6 +2549,11 @@ let NAV = null;
 const LIGHT_POOL = []; let lightPoolT = 0, floorVisT = 0;
 // 가까운 조명 자리로 조명 묶음을 옮기고, 보이지 않는 층은 그리지 않음 (다층 맵 전용)
 function updateFloors(dt, x, y, z) {
+  // 넓은 맵: 해 그림자 범위를 플레이어 주변 ±shadowFollow m 로 좁혀 따라다니게 함 (그림자를 그리는 양이 줄고 더 선명해짐)
+  if (M && M.shadowFollow && sun.castShadow) {
+    const gx = Math.round(x / 2) * 2, gz = Math.round(z / 2) * 2;
+    sun.position.set(gx + M.sun[0], M.sun[1], gz + M.sun[2]); sun.target.position.set(gx, 0, gz); sun.target.updateMatrixWorld();
+  }
   if (LIGHT_POOL.length && (lightPoolT -= dt) <= 0) {
     lightPoolT = 0.25;
     const pf = floorOf(y - 1.7);
@@ -2556,6 +2569,94 @@ function updateFloors(dt, x, y, z) {
     });
   }
 }
+// ---------- 최적화: 움직이지 않는 맵 부품 합치기 ----------
+// 맵의 상자, 장식 하나하나가 따로 그려지면(그리기 호출 수천 번) 느려지므로, 같은 재질끼리 60m 구역 단위로 한 덩어리로 합쳐 그림.
+// 원래 부품은 숨겨 두기만 해서 총알, 시야 판정(worldMeshes)과 충돌은 그대로 원래 모양을 씀
+function matKey(m) {
+  const c = x => x ? x.getHexString() : '', t = x => x ? x.uuid : '';
+  return [m.type, c(m.color), c(m.emissive), t(m.map), t(m.bumpMap), m.bumpScale, m.roughness, m.metalness, m.envMapIntensity, m.opacity, m.transparent, m.side, m.vertexColors, m.flatShading, m.depthWrite, m.polygonOffset, m.polygonOffsetFactor, m.alphaTest, m.fog].join('|');
+}
+function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const keep = new Set(); for (const v of VAULTS) { keep.add(v.mesh); keep.add(v.lamp); }
+  const bins = new Map(), mats = new Map(), sph = new THREE.Sphere();
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || keep.has(o) || !o.visible || o.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) return;
+    const m = o.material; if (Array.isArray(m) || m.transparent || !o.geometry.isBufferGeometry || !o.geometry.attributes.position || !o.geometry.attributes.normal) return;
+    let p = o.parent; while (p && p !== root && !FLOOR_GROUPS.includes(p)) p = p.parent; if (!p) return;
+    const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+    sph.copy(g.boundingSphere).applyMatrix4(o.matrixWorld); if (sph.radius > 60) return;   // 아주 큰 것(바닥판, 절벽)은 그대로
+    const mk = matKey(m); if (!mats.has(mk)) mats.set(mk, m);
+    const attrs = Object.keys(g.attributes).filter(k => ['position', 'normal', 'uv', 'color'].includes(k)).sort().join(',');
+    const key = [p.uuid, mk, attrs, o.castShadow ? 1 : 0, o.receiveShadow ? 1 : 0, Math.floor(sph.center.x / 60), Math.floor(sph.center.z / 60)].join('#');
+    let b = bins.get(key); if (!b) bins.set(key, b = { parent:p, mat:mats.get(mk), attrs:attrs.split(','), list:[], cast:o.castShadow, recv:o.receiveShadow });
+    b.list.push(o);
+  });
+  let merged = 0;
+  for (const b of bins.values()) {
+    if (b.list.length < 2) continue;
+    const parts = b.list.map(o => { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); return g; });
+    const out = new THREE.BufferGeometry();
+    let vtot = 0, itot = 0; for (const g of parts) { vtot += g.attributes.position.count; itot += g.index ? g.index.count : g.attributes.position.count; }
+    for (const a of b.attrs) {
+      const size = parts[0].attributes[a].itemSize, arr = new Float32Array(vtot * size); let off = 0;
+      for (const g of parts) { const src = g.attributes[a]; for (let i = 0; i < src.count; i++) for (let k = 0; k < size; k++) arr[off++] = src.array[i * size + k]; }
+      out.setAttribute(a, new THREE.BufferAttribute(arr, size));
+    }
+    const idx = vtot > 65535 ? new Uint32Array(itot) : new Uint16Array(itot); let io = 0, vo = 0;
+    for (const g of parts) { const n = g.attributes.position.count; if (g.index) for (let i = 0; i < g.index.count; i++) idx[io++] = g.index.array[i] + vo; else for (let i = 0; i < n; i++) idx[io++] = i + vo; vo += n; g.dispose(); }
+    out.setIndex(new THREE.BufferAttribute(idx, 1)); out.computeBoundingSphere(); out.computeBoundingBox();
+    const mm = new THREE.Mesh(out, b.mat); mm.castShadow = b.cast; mm.receiveShadow = b.recv; mm.matrixAutoUpdate = false; mm.updateMatrix();
+    b.parent.add(mm); mm.updateMatrixWorld(true);
+    for (const o of b.list) { o.visible = false; o.matrixAutoUpdate = false; }
+    merged += b.list.length;
+  }
+  return merged;
+}
+// 적 모형 합치기: 같은 관절(팔, 다리, 몸통) 안에서 재질과 부위(머리 등)가 같은 부품끼리 하나로 합침.
+// 적 하나가 부품 30개 안팎이라 그리기 호출이 많았음. 움직이는 부품(관절, 회전하는 프로펠러, 총 등)은 따로 둠
+function mergeModel(root, owner) {
+  const keep = new Set();
+  for (const k in owner) { const v = owner[k]; if (v && v.isObject3D) keep.add(v); else if (Array.isArray(v)) for (const x of v) if (x && x.isObject3D) keep.add(x); }
+  const groups = []; root.traverse(o => { if (!o.isMesh) groups.push(o); });
+  for (const grp of groups) {
+    const bins = new Map();
+    for (const c of grp.children) {
+      if (!c.isMesh || c.isInstancedMesh || keep.has(c) || c.children.length || Array.isArray(c.material) || c.material.transparent || !c.geometry.attributes.normal) continue;
+      const g = c.geometry, attrs = Object.keys(g.attributes).filter(k => ['position', 'normal', 'uv'].includes(k)).sort().join(',');
+      const key = [c.material.uuid, JSON.stringify(c.userData), c.castShadow ? 1 : 0, c.visible ? 1 : 0, attrs].join('#');
+      if (!bins.has(key)) bins.set(key, []); bins.get(key).push(c);
+    }
+    for (const list of bins.values()) {
+      if (list.length < 2) continue;
+      const attrs = Object.keys(list[0].geometry.attributes).filter(k => ['position', 'normal', 'uv'].includes(k));
+      const parts = list.map(c => { c.updateMatrix(); const g = c.geometry.clone(); g.applyMatrix4(c.matrix); return g; });
+      let vtot = 0, itot = 0; for (const g of parts) { vtot += g.attributes.position.count; itot += g.index ? g.index.count : g.attributes.position.count; }
+      const out = new THREE.BufferGeometry();
+      for (const a of attrs) { const size = parts[0].attributes[a].itemSize, arr = new Float32Array(vtot * size); let off = 0; for (const g of parts) { arr.set(g.attributes[a].array.subarray(0, g.attributes[a].count * size), off); off += g.attributes[a].count * size; } out.setAttribute(a, new THREE.BufferAttribute(arr, size)); }
+      const idx = vtot > 65535 ? new Uint32Array(itot) : new Uint16Array(itot); let io = 0, vo = 0;
+      for (const g of parts) { const n = g.attributes.position.count; if (g.index) for (let i = 0; i < g.index.count; i++) idx[io++] = g.index.array[i] + vo; else for (let i = 0; i < n; i++) idx[io++] = i + vo; vo += n; g.dispose(); }
+      out.setIndex(new THREE.BufferAttribute(idx, 1)); out.computeBoundingSphere();
+      const m = new THREE.Mesh(out, list[0].material); m.castShadow = list[0].castShadow; m.receiveShadow = list[0].receiveShadow; m.visible = list[0].visible;
+      Object.assign(m.userData, list[0].userData, { mergedGeo:true });
+      for (const c of list) grp.remove(c);
+      grp.add(m);
+    }
+  }
+  // 멀리 있을 때 숨길 작은 부품 (단추, 줄, 렌즈 같은 것). 판정은 숨겨도 그대로 됨
+  if (owner) { owner.details = []; const sp = new THREE.Sphere(), sc = new THREE.Vector3();
+    root.updateMatrixWorld(true);
+    root.traverse(o => { if (!o.isMesh || keep.has(o) || o.userData.head || o.userData.shield || o.userData.core || !o.visible) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.getWorldScale(sc); if (o.geometry.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z) < 0.09) owner.details.push(o); }); }
+}
+// 적이 멀면(60m 넘게) 작은 부품을 숨겨 그리는 양을 줄임
+function enemyLod(e) {
+  if (!e.details || !e.details.length) return;
+  const far = camera.position.distanceToSquared(e.g.position) > 3600;
+  if (far === e.lodFar) return; e.lodFar = far;
+  for (const o of e.details) o.visible = !far;
+}
+// 합친 모형을 치울 때 합쳐 만든 도형도 메모리에서 지움
+function disposeModel(root) { root.traverse(o => { if (o.userData && o.userData.mergedGeo) o.geometry.dispose(); }); }
 // 1m 칸마다 최대 NAV_S 개의 바닥(지면, 위층 바닥판, 경사로, 단상)을 따로 둠. 노드 번호 = 칸 * NAV_S + 바닥 번호
 const NAV_S = 4;
 function buildNav() {
@@ -3207,7 +3308,7 @@ let enemies = [], shots = [], pickups = [], parts = [], tracers = [], nades = []
 let msgT = 0;
 
 function resetGame() {
-  for (const e of enemies) { scene.remove(e.g); if (e.aimLine) scene.remove(e.aimLine); }
+  for (const e of enemies) { scene.remove(e.g); disposeModel(e.g); if (e.aimLine) scene.remove(e.aimLine); }
   for (const s of shots) scene.remove(s.m);
   for (const p of pickups) scene.remove(p.m);
   for (const p of parts) scene.remove(p.m);
@@ -3930,6 +4031,7 @@ function spawnEnemyAt(type, x, z, alert, y = 0) {
   // 다리와 팔이 위쪽 끝(엉덩이, 어깨)을 축으로 돌도록 바꿈 (가운데를 축으로 돌면 가위처럼 보임)
   if (e.legs) e.legs = e.legs.map(pivotLimb); if (e.legs2) e.legs2 = e.legs2.map(pivotLimb); if (e.arms && e.arms.length) e.arms = e.arms.map(pivotLimb);
   if (e.gunParts && e.arms && e.arms.length) attachGun(e);
+  mergeModel(e.g, e);
   if (type === 'jugg') { e.g.rotation.order = 'YXZ'; e.mgKick = 0; e.podKick = 0; }
   e.mv = 0; e.gp = Math.random() * 6;
   e.isBoss = ['boss', 'jugg', 'snp', 'bguard'].includes(type);
@@ -3992,7 +4094,7 @@ function killEnemy(e) {
   const c = e.g.position.clone(); c.y += e.type === 'drone' ? 0 : e.type === 'brute' ? 1.6 : 1.1;
   burst(c, e.col, e.type === 'brute' ? 26 : 14, 5); burst(c, '#222428', 6, 4);
   SND.play('kill');
-  scene.remove(e.g);
+  scene.remove(e.g); disposeModel(e.g);
   if (e.loot) {
     // 확정은 보스 고유 품목 1개뿐, 나머지는 개수와 품목 모두 무작위
     const L = e.loot, items = [L.tag], n = rollN(L.n[0], L.n[1]); for (let k = 0; k < n; k++) items.push(pickLoot(L.table)); if (Math.random() < L.key) items.push('keycard');
@@ -4121,7 +4223,7 @@ function alertAround(pos, r, fy = pos.y, sound = false) {
 function seeMul() { return (laserActive() || lightActive() ? 1 : 0.7) * (1 - crouchT * 0.25) * (1 - proneT * 0.45); }
 function updateEnemies(dt) {
   // 협동전에서 AI 담당이 아닌 사람: 적을 직접 움직이지 않고 담당자가 보낸 위치를 따라 그림
-  if (netPuppet()) { updatePuppets(dt); return; }
+  if (netPuppet()) { updatePuppets(dt); for (const e of enemies) enemyLod(e); return; }
   if (NAV) updateNav(dt);
   const eye = EYE;
   for (const e of enemies) {
@@ -4130,6 +4232,7 @@ function updateEnemies(dt) {
     const mt = pickTarget(e, dt);
     if (mt) { _realPos.copy(P.pos); _realEye.copy(EYE); P.pos.set(mt.tx, mt.ty + 1.7, mt.tz); EYE.set(mt.tx, mt.ty + (mt.flags & 256 ? 0.45 : mt.flags & 1 ? 1.15 : 1.7), mt.tz); aimMate = mt; }
     try { updateEnemy(e, dt, eye); } finally { if (mt) { P.pos.copy(_realPos); EYE.copy(_realEye); aimMate = null; } }
+    enemyLod(e);
   }
   enemies = enemies.filter(e => !e.dead);
 }
@@ -4616,7 +4719,7 @@ function updateFx(dt) {
   tracers = tracers.filter(t => { if (t.t <= 0) { scene.remove(t.m); t.m.geometry.dispose(); t.m.material.dispose(); } return t.t > 0; });
   if (hitT > 0) { hitT -= dt; if (hitT <= 0) $('hitmark').style.opacity = 0; }
   dmgFlash = Math.max(0, dmgFlash - dt * 1.6);
-  hitEdgeT = Math.max(0, hitEdgeT - dt * 2.2); $('hitEdge').style.opacity = hitEdgeT;
+  hitEdgeT = Math.max(0, hitEdgeT - dt * 2.2); setStyle('hitEdge', 'opacity', hitEdgeT.toFixed(2));
   // 체력 30% 이하: 화면이 흐려지고 가장자리에 피가 번짐 (체력이 낮을수록, 쓰러지면 가장 심함)
   { const r = P.downed ? 0 : P.hp / (P.maxHp || 100), k = P.downed ? 1 : r < 0.3 ? (0.3 - r) / 0.3 : 0;
     const want = Math.round(k * 20) / 20;
@@ -4625,7 +4728,7 @@ function updateFx(dt) {
       renderer.domElement.style.filter = want > 0 ? `blur(${(0.6 + want * 2.4).toFixed(2)}px) saturate(${(1 - want * 0.45).toFixed(2)})` : '';
       $('bloodOv').style.opacity = want > 0 ? (0.35 + want * 0.6).toFixed(2) : 0;
     } }
-  $('vignette').style.opacity = Math.max(dmgFlash, P.hp < 30 ? 0.35 + Math.sin(performance.now() / 250) * 0.1 : 0);
+  setStyle('vignette', 'opacity', Math.max(dmgFlash, P.hp < 30 ? 0.35 + Math.sin(performance.now() / 250) * 0.1 : 0).toFixed(2));
 }
 
 // ---------- 웨이브 ----------
@@ -4678,9 +4781,12 @@ function say(t, short) {
 }
 const hudCache = {};
 function setTxt(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
+// 같은 값이면 화면 요소 스타일을 다시 쓰지 않음 (매 프레임 쓰면 브라우저가 화면 배치를 다시 계산함)
+const _styleCache = {};
+function setStyle(id, prop, v) { const k = id + '.' + prop; if (_styleCache[k] === v) return; _styleCache[k] = v; $(id).style[prop] = v; }
 function updateHud(dt) {
   setTxt('hpTxt', String(Math.ceil(P.hp))); setTxt('arTxt', String(Math.ceil(P.ar)));
-  $('hpBar').style.width = (P.hp / P.maxHp * 100) + '%'; $('arBar').style.width = (P.ar / (P.arMax || 100) * 100) + '%';
+  setStyle('hpBar', 'width', (P.hp / P.maxHp * 100).toFixed(1) + '%'); setStyle('arBar', 'width', (P.ar / (P.arMax || 100) * 100).toFixed(1) + '%');
   const a = ammo[weapon];
   if (mode === 'wave') { setTxt('magTxt', '∞'); setTxt('resTxt', WEAPONS[weapon].charge ? '충전식' : '재장전 없음'); }
   else if (WEAPONS[weapon].charge) { setTxt('magTxt', '∞'); setTxt('resTxt', '충전식'); }
@@ -4995,11 +5101,14 @@ function addExtract(ex) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(2.3, 2.5, 32), new THREE.MeshBasicMaterial({ color:'#7dffa0', side:THREE.DoubleSide }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; g.add(ring);
   const lab = makeLabel(ex.name); lab.position.y = 4.6; g.add(lab);
-  const l = new THREE.PointLight('#5dff8a', 1.2, 14, 2); l.position.y = 2.5; g.add(l);
+  // 조명 묶음 맵에서는 탈출 지점 빛도 묶음에 넣음 (실제 조명 수가 늘면 모든 화면 계산이 느려짐)
+  if (M && M.lightPool) LIGHT_SPOTS.push({ col:'#5dff8a', power:1.2, dist:14, x:ex.x, y:(ex.y || 0) + 2.5, z:ex.z, ext:true });
+  else { const l = new THREE.PointLight('#5dff8a', 1.2, 14, 2); l.position.y = 2.5; g.add(l); }
   g.position.set(ex.x, ex.y || 0, ex.z); scene.add(g);
   extMarks.push(g);
 }
 function clearRaid() {
+  LIGHT_SPOTS = LIGHT_SPOTS.filter(L => !L.ext);
   $('endWarn').hidden = true;
   $('radar').classList.remove('on'); $('extList').classList.remove('show'); extShowT = 0;
   $('bossBar').style.display = 'none';
@@ -5903,7 +6012,7 @@ function raidEnd(ok, why) {
       + `<div class="kl">${L.kills.length ? L.kills.map(k => `<div><span class="tm">${fmtMS(k.t)}</span><span>${k.name}</span><span>${k.w}${k.head ? ' <span class="hs">헤드샷</span>' : ''}</span><span class="tm">${k.dist}m</span></div>`).join('') : '<div><span></span><span>처치 기록 없음</span><span></span><span></span></div>'}</div>`; }
   $('raidOv').hidden = false; $('hud').hidden = true;
   clearRaid();
-  for (const e of enemies) { scene.remove(e.g); if (e.aimLine) scene.remove(e.aimLine); } enemies = [];
+  for (const e of enemies) { scene.remove(e.g); disposeModel(e.g); if (e.aimLine) scene.remove(e.aimLine); } enemies = [];
 }
 
 // ---------- 은신처 화면 ----------
@@ -5961,7 +6070,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.18';
+const GAME_VER = 'v1.2.18.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -6263,7 +6372,7 @@ function sendAI(dt) {
 }
 function dropEnemyQuiet(e) {
   if (e.dead) return;
-  e.dead = true; scene.remove(e.g); if (e.aimLine) { scene.remove(e.aimLine); e.aimLine = null; }
+  e.dead = true; scene.remove(e.g); disposeModel(e.g); if (e.aimLine) { scene.remove(e.aimLine); e.aimLine = null; }
   for (const b of lootBoxes) if (b.locked && b.owners && b.owners.includes(e)) { b.owners = b.owners.filter(x => x !== e); if (!b.owners.length) { b.locked = false; b.lamp.material.color.set('#4dff7a'); } }
 }
 function netAI(d) {
@@ -6944,7 +7053,7 @@ function frame(now) {
     M.titleCam(idle);
   }
   // 출격이 끝나면 체력 낮을 때의 흐림, 핏자국 효과를 지움
-  if (lowHpK && state !== 'play' && state !== 'inv' && state !== 'paused') { lowHpK = 0; renderer.domElement.style.filter = ''; $('bloodOv').style.opacity = 0; $('hitEdge').style.opacity = 0; hitEdgeT = 0; }
+  if (lowHpK && state !== 'play' && state !== 'inv' && state !== 'paused') { lowHpK = 0; renderer.domElement.style.filter = ''; $('bloodOv').style.opacity = 0; setStyle('hitEdge', 'opacity', '0.00'); hitEdgeT = 0; }
   if (state === 'title') updateFloors(dt, camera.position.x, camera.position.y, camera.position.z);
   else updateFloors(dt, P.pos.x, P.pos.y, P.pos.z);
   renderer.clear();
