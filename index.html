@@ -281,10 +281,10 @@ body.dropping #dropHint{ display:flex; }
   font:inherit; font-weight:700; font-size:16px; background:var(--amber); color:#1c1408; border:0;
   padding:.7em 1.6em; cursor:pointer; clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);
 }
-.primary:focus-visible, .tb:focus-visible, #muteBtn:focus-visible{ outline:3px solid var(--blue); outline-offset:3px; }
+.primary:focus-visible, .tb:focus-visible, #muteBtn:focus-visible, #fsBtn:focus-visible{ outline:3px solid var(--blue); outline-offset:3px; }
 .note{ font-size:13px; color:var(--dim); margin-top:1em; }
-#muteBtn{
-  position:absolute; top:calc(10px + env(safe-area-inset-top,0px)); right:calc(10px + env(safe-area-inset-right,0px)); z-index:6;
+#topBtns{ position:absolute; top:calc(10px + env(safe-area-inset-top,0px)); right:calc(10px + env(safe-area-inset-right,0px)); z-index:6; display:flex; gap:6px; }
+#muteBtn, #fsBtn{
   font:inherit; font-size:12px; font-weight:600; background:rgba(18,21,27,.6); color:var(--ink); border:1px solid rgba(241,233,216,.25); padding:5px 10px; cursor:pointer;
 }
 #touch{ position:absolute; inset:0; display:none; z-index:4; pointer-events:none; }
@@ -351,7 +351,7 @@ body.is-raid .waveonly{ display:none; }
   .top b{ font-size:12px; margin-left:4px; }
   #leftCol .tlean{ pointer-events:auto; flex-direction:row; }
   #extList{ font-size:10.5px; top:calc(96px + env(safe-area-inset-top,0px)); right:calc(10px + env(safe-area-inset-right,0px)); max-width:30vw; }
-  #muteBtn{ font-size:10.5px; padding:4px 8px; }
+  #muteBtn, #fsBtn{ font-size:10.5px; padding:4px 8px; }
   #radar{ left:50%; margin-left:-48px; top:calc(30px + env(safe-area-inset-top,0px)); width:96px; height:96px; }
   #consum{ bottom:calc(64px + env(safe-area-inset-bottom,0px)); font-size:11px; }
   #bossBar{ top:calc(8px + env(safe-area-inset-top,0px)); width:min(240px, 30vw); font-size:11px; }
@@ -446,7 +446,7 @@ body.is-raid .waveonly{ display:none; }
     </div>
   </div>
 
-  <button id="muteBtn" type="button">소리 끄기 (M)</button>
+  <div id="topBtns"><button id="fsBtn" type="button" hidden>전체 화면</button><button id="muteBtn" type="button">소리 끄기 (M)</button></div>
 
   <div id="dropHint"><div>저장 파일을 놓으면 진행 상황을 불러옵니다</div></div>
   <div class="overlay" id="startOv">
@@ -6184,7 +6184,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.18.7';
+const GAME_VER = 'v1.2.18.8';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -7143,6 +7143,28 @@ if (isTouch) {
   const tl = document.querySelector('.tlean'); if (tl) col.appendChild(tl);
 }
 $('muteBtn').addEventListener('click', toggleMute);
+// ---------- 전체 화면 ----------
+// 브라우저 주소창과 탭을 숨기고 게임 화면만 보이게 함. 한 번 켜면 기억해 두었다가, 나갔다 돌아올 때(화면 클릭) 다시 전체 화면으로
+const fsRoot = document.documentElement;
+const canFs = !!(fsRoot.requestFullscreen || fsRoot.webkitRequestFullscreen);
+let fsWant = false; try { fsWant = localStorage.getItem('scrapyard-fs') === '1'; } catch (_) {}
+const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function enterFs() {
+  if (!canFs || isFs()) return;
+  try { const r = (fsRoot.requestFullscreen || fsRoot.webkitRequestFullscreen).call(fsRoot, { navigationUI:'hide' }); if (r && r.catch) r.catch(() => {}); } catch (_) {}
+}
+function toggleFs() {
+  fsWant = !isFs();
+  try { localStorage.setItem('scrapyard-fs', fsWant ? '1' : '0'); } catch (_) {}
+  if (fsWant) enterFs(); else { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (_) {} }
+  $('fsBtn').blur();
+}
+function fsLabel() { $('fsBtn').textContent = isFs() ? '전체 화면 끄기' : '전체 화면'; }
+if (canFs) { $('fsBtn').hidden = false; fsLabel(); }
+$('fsBtn').addEventListener('click', toggleFs);
+for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => { fsLabel(); if (typeof resize === 'function') resize(); });
+// 화면을 클릭하거나 누를 때(사용자 동작이 있어야 전체 화면이 됨) 켜 둔 상태면 다시 전체 화면으로
+addEventListener('pointerdown', e => { if (fsWant && !isFs() && e.target !== $('fsBtn')) enterFs(); }, true);
 let inFrame = true; try { inFrame = window.top !== window.self; } catch (_) {}
 $('newTabBtn').addEventListener('click', e => { e.stopPropagation(); window.open(location.href, '_blank', 'noopener'); });
 
