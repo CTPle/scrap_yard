@@ -2559,7 +2559,7 @@ function updateFloors(dt, x, y, z) {
 // 1m 칸마다 최대 NAV_S 개의 바닥(지면, 위층 바닥판, 경사로, 단상)을 따로 둠. 노드 번호 = 칸 * NAV_S + 바닥 번호
 const NAV_S = 4;
 function buildNav() {
-  buildColGrid();
+  buildColGrid(); SOUND_FIELDS = [];
   const W = Math.ceil(BX * 2), H = Math.ceil(BZ * 2), S = NAV_S, n = W * H * S;
   const walk = new Uint8Array(n), hh = new Float32Array(n).fill(NaN);
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
@@ -2621,8 +2621,8 @@ const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]
 // 두 칸 사이를 대각선으로 지날 때 옆 두 칸에도 비슷한 높이의 바닥이 있어야 함
 function navNear(k, h) { const { S, walk, hh } = NAV; for (let s = 0; s < S; s++) { const m = k * S + s; if (walk[m] && Math.abs(hh[m] - h) < 0.7) return true; } return false; }
 // toPlayer 가 참이면 플레이어 쪽으로 가는 길(이웃에서 이 노드로 올 수 있어야 함), 거짓이면 이 노드에서 나가는 길
-function navBfs(src, toPlayer) {
-  const { W, H, S, walk, hh, dist, q } = NAV;
+function navBfs(src, toPlayer, dist = NAV.dist) {
+  const { W, H, S, walk, hh, q } = NAV;
   let head = 0, tail = 0; q[tail++] = src; dist[src] = 0;
   while (head < tail) {
     const c = q[head++], kc = (c / S) | 0, ci = kc % W, cj = (kc - ci) / W, hc = hh[c];
@@ -2638,6 +2638,25 @@ function navBfs(src, toPlayer) {
       }
     }
   }
+}
+// ---------- 소리 확인용 길찾기 ----------
+// 총소리, 폭발 소리가 난 곳까지 가는 길(거리 지도)을 만들어 둠. 같은 곳(8m 이내)에서 3초 안에 다시 난 소리는 지도를 다시 쓰고,
+// 지도는 최근 것 몇 개만 남김 (적이 들고 있는 지도는 그 적이 다 쓸 때까지 그대로 유지됨)
+let SOUND_FIELDS = [];
+function soundField(x, z, fy) {
+  if (!NAV) return null;
+  const now = performance.now();
+  for (const f of SOUND_FIELDS) if (now - f.t < 3000 && Math.hypot(f.x - x, f.z - z) < 8 && Math.abs(f.fy - fy) < 2) return f;
+  let src = -1, bd = Infinity;
+  for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+    const m = navNode(x + dx, z + dz, fy); if (m < 0 || (NAV.reach && !NAV.reach[m])) continue;
+    const d = Math.abs(NAV.hh[m] - fy) * 3 + Math.abs(dx) + Math.abs(dz); if (d < bd && Math.abs(NAV.hh[m] - fy) < 2) { bd = d; src = m; }
+  }
+  if (src < 0) return null;
+  const f = { x, z, fy, t:now, dist:new Int32Array(NAV.dist.length).fill(-1) };
+  navBfs(src, true, f.dist);
+  SOUND_FIELDS.push(f); if (SOUND_FIELDS.length > 4) SOUND_FIELDS.shift();
+  return f;
 }
 function updateNav(dt) {
   NAV.t -= dt; if (NAV.t > 0) return; NAV.t = 0.35;
@@ -2656,11 +2675,11 @@ function updateNav(dt) {
 }
 function navXZ(m) { const k = (m / NAV.S) | 0, i = k % NAV.W, j = (k - i) / NAV.W; return [-BX + i + 0.5, -BZ + j + 0.5]; }
 // 플레이어 쪽으로 가는 방향. feet 는 적의 발 높이(드론은 아래 바닥 높이)
-function flowDir(p, feet = p.y) {
+function flowDir(p, feet = p.y, dist = NAV && NAV.dist) {
   if (!NAV) return null;
   if (navCell(p.x, p.z) < 0) return null;
   const c = navNode(p.x, p.z, feet);
-  const { S, W, H, walk, hh, dist } = NAV;
+  const { S, W, H, walk, hh } = NAV;
   const dir = m => { const [x, z] = navXZ(m), dx = x - p.x, dz = z - p.z, l = Math.hypot(dx, dz) || 1; return { x:dx / l, z:dz / l }; };
   if (c < 0 || dist[c] < 0 || Math.abs(hh[c] - feet) > 1.2) {
     // 벽에 붙어 칸이 막혀 있으면 주변에서 도달 가능한 같은 높이의 칸을 찾아 그쪽으로
@@ -3455,7 +3474,7 @@ function fire() {
     const Q = rq(weapon), q = Q[0]; q.n--;
     if (q.n <= 0) { Q.shift(); if (q.type !== 'std') say(Q.length ? `${AMMO_TYPES[q.type].name}을 다 썼습니다` : '주무기 탄약을 다 썼습니다', 1); }
   }
-  if (mode === 'raid') alertAround(P.pos, w.snd === 'pistol' ? 16 : 26, P.pos.y - 1.7);
+  if (mode === 'raid') alertAround(P.pos, w.snd === 'pistol' ? 16 : 26, P.pos.y - 1.7, true);
   SND.play(w.snd);
   recoil = Math.min(recoil + w.recoil, 0.3); kick = w.recoil;
   // 반동은 별도 값으로 쌓고 시간이 지나면 원래 조준점으로 복귀
@@ -3558,7 +3577,7 @@ function blastReach(p, body, headUp) {
 const SELF_BLAST = 0.35;
 function explode(p, dmgIn, Rin, fromNet) {
   SND.play('boom'); shakeAmt = Math.max(shakeAmt, 0.3);
-  if (mode === 'raid') alertAround(p, 30);
+  if (mode === 'raid') alertAround(p, 30, p.y, true);
   burst(p, '#f0a530', 18, 7); burst(p, '#ffe2a0', 8, 5); burst(p, '#3a3530', 10, 4);
   flashLight.position.copy(p); flashLight.intensity = 7;
   const ring = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color:'#ffb347', transparent:true, opacity:0.75, depthWrite:false }));
@@ -3946,7 +3965,7 @@ function damageEnemy(e, d, dir, by) {
     e.lastHit = { w:hitCtx ? hitCtx.w : '?', head:!!(hitCtx && hitCtx.head) };
   }
   if (netPuppet()) { e.flashT = 0.08; if (e.pup) NET.hq.set(e.nid, (NET.hq.get(e.nid) || 0) + d); return false; }
-  alertAround(e.g.position, 14, e.fy); e.alert = true;
+  alertAround(e.g.position, 14, e.fy); e.alert = true; e.inv = null;
   if (e.type === 'drone') d = e.hp + 1; // 드론은 어디에 맞아도 한 발에 격추
   e.hp -= d; e.flashT = 0.08;
   if (e.type !== 'brute') e.g.position.addScaledVector(tmpV.set(dir.x, 0, dir.z).normalize(), 0.08);
@@ -4082,10 +4101,22 @@ function buffBoss(e, m) {
   e.hp *= m.hp; e.maxHp *= m.hp; e.dmgMul = m.dmg; e.speed *= m.spd; e.relentless = true;
   if (m.leash) e.leash = m.leash;
 }
-function alertAround(pos, r, fy = pos.y) {
+// sound 가 참이면 소리만 들은 것: 바로 쫓아오지 않고 소리가 난 곳으로 확인하러 감 (가는 길에 보거나 가까이서 들으면 교전)
+// 거짓이면(동료가 맞았거나 발견을 알림) 곧바로 경계해서 쫓아옴
+function alertAround(pos, r, fy = pos.y, sound = false) {
   if (mode === 'raid' && raid && raid.cfg && raid.cfg.alertR && r < raid.cfg.alertR) r = raid.cfg.alertR;
   const f = floorOf(fy);
-  for (const o of enemies) if (!o.dead && !o.alert && Math.hypot(o.g.position.x - pos.x, o.g.position.z - pos.z) < r * (floorOf(o.fy) === f ? 1 : 0.4)) { o.alert = true; o.cd = rand(0.8, 1.6); }
+  let field;
+  for (const o of enemies) {
+    if (o.dead || o.alert || Math.hypot(o.g.position.x - pos.x, o.g.position.z - pos.z) >= r * (floorOf(o.fy) === f ? 1 : 0.4)) continue;
+    if (!sound) { o.alert = true; o.cd = rand(0.8, 1.6); o.inv = null; continue; }
+    // 자리를 지키는 적(보스, 호위, 경비병)은 지키는 구역에서 너무 먼 소리면 그쪽을 돌아보기만 함
+    // 경계 시간 25초: 그동안 총을 들고 소리 난 쪽을 살피고, 적대 요인이 없으면 경계를 풂. 새 소리를 들으면 다시 25초
+    const dir = Math.atan2(pos.x - o.g.position.x, pos.z - o.g.position.z);
+    if (o.guardZone && o.anchor && Math.hypot(o.anchor.x - pos.x, o.anchor.z - pos.z) > (o.leash || 15)) { o.inv = { x:pos.x, z:pos.z, fy, field:null, t:25, arrived:true, stay:true, dir }; continue; }
+    if (field === undefined) field = soundField(pos.x, pos.z, fy);
+    o.inv = { x:pos.x, z:pos.z, fy, field, t:25, arrived:false, dir };
+  }
 }
 function seeMul() { return (laserActive() || lightActive() ? 1 : 0.7) * (1 - crouchT * 0.25) * (1 - proneT * 0.45); }
 function updateEnemies(dt) {
@@ -4109,18 +4140,33 @@ function updateEnemy(e, dt, eye) {
       if (g.scale.x < 1) g.scale.setScalar(Math.min(1, g.scale.x + dt * 4));
       if (e.type === 'drone') { g.position.y = e.fy + (M.droneH || 4.6) + Math.sin(e.t * 2.2) * 0.25; e.rotors[0].rotation.y += dt * 30; }
       if (e.flashT > 0) e.flashT -= dt;
+      let walking = false, spdK = 0.35;
+      if (e.inv) {
+        // 소리 확인: 총을 든 채 소리가 난 곳까지 길을 따라 걸어가서 소리 난 쪽을 중심으로 둘러봄 (자리를 지키는 적은 제자리에서 그쪽을 경계)
+        // 25초 동안 아무 일이 없으면 경계를 풀고 그 자리에서 다시 순찰
+        const I = e.inv; I.t -= dt;
+        const px = I.x - g.position.x, pz = I.z - g.position.z, pd = Math.hypot(px, pz);
+        if (I.t <= 0) { e.inv = null; e.pt = null; if (!e.guardZone && e.anchor) e.anchor.set(g.position.x, e.anchor.y, g.position.z); }
+        else if (!I.arrived && pd > 2.2) {
+          const d0 = I.field ? flowDir(g.position, e.type === 'drone' ? e.fy : g.position.y, I.field.dist) : null, d = d0 || { x:px / pd, z:pz / pd };
+          const sp = e.speed * 0.6 * dt; spdK = 0.6;
+          g.position.x += d.x * sp; g.position.z += d.z * sp; walking = true;
+          if (e.type !== 'drone') { pushOut(g.position, e.r, g.position.y); g.position.y = e.fy = groundAt(g.position.x, g.position.z, e.r * 0.5, g.position.y); e.vy = 0; }
+          else pushOut(g.position, e.r, g.position.y - 1.0);
+          e.look = Math.atan2(d.x, d.z); I.dir = Math.atan2(px, pz);
+        } else { I.arrived = true; e.look = I.dir; }
+      }
       // 구역 안을 천천히 순찰
       const A = e.anchor || g.position;
-      e.ptT -= dt;
-      if (e.ptT <= 0 || !e.pt) {
+      if (!e.inv) e.ptT -= dt;
+      if (!e.inv && (e.ptT <= 0 || !e.pt)) {
         e.ptT = rand(3, 7);
         for (let k = 0; k < 8; k++) {
           const a = rand(0, 6.28), r = rand(0, e.zone || 6), tx = A.x + Math.cos(a) * r, tz = A.z + Math.sin(a) * r;
           if (e.type === 'drone' || (NAV && navHas(tx, tz, e.fy))) { e.pt = { x:tx, z:tz }; break; }
         }
       }
-      let walking = false;
-      if (e.pt) {
+      if (e.pt && !e.inv) {
         const px = e.pt.x - g.position.x, pz = e.pt.z - g.position.z, pd = Math.hypot(px, pz);
         if (pd > 0.6) {
           const sp = e.speed * 0.35 * dt;
@@ -4133,10 +4179,11 @@ function updateEnemy(e, dt, eye) {
           e.look = Math.atan2(px, pz);
         }
       }
-      g.rotation.y += (((e.look + (walking ? 0 : Math.sin(e.t * 0.5 + e.phase) * 0.7)) - g.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 4);
+      const sweep = walking ? 0 : e.inv ? Math.sin(e.t * 0.9 + e.phase) * 0.9 : Math.sin(e.t * 0.5 + e.phase) * 0.7;   // 경계 중에는 소리 난 쪽을 중심으로 더 넓게 살핌
+      g.rotation.y += (((e.look + sweep) - g.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 4);
       if (g.rotation.y > Math.PI) g.rotation.y -= Math.PI * 2; else if (g.rotation.y < -Math.PI) g.rotation.y += Math.PI * 2;
-      e.mv += ((walking ? e.speed * 0.35 : 0) - e.mv) * Math.min(1, dt * 6);
-      enemyGait(e, dt, false);
+      e.mv += ((walking ? e.speed * spdK : 0) - e.mv) * Math.min(1, dt * 6);
+      enemyGait(e, dt, !!e.inv);                                                       // 경계 중에는 총을 듦
       // 발견: 정면 시야각(약 130도) 안에서 보이거나, 아주 가까이 오거나, 달리는 소리가 들리면
       e.losT -= dt;
       if (e.losT <= 0) {
@@ -4145,10 +4192,10 @@ function updateEnemy(e, dt, eye) {
         const facing = (Math.sin(g.rotation.y) * ddx + Math.cos(g.rotation.y) * ddz) / d;
         const from0 = g.position.clone().add(tmpV2.set(0, e.type === 'drone' ? 0 : e.type === 'snp' ? 1.9 : e.type === 'bguard' ? 2.3 : e.type === 'jugg' ? 2.8 : e.type === 'boss' ? 3.2 : e.type === 'brute' ? 2.4 : 1.6, 0));
         const running = (keys.ShiftLeft || keys.ShiftRight) && P.onGround;
-        const sees = d < AI.see * seeMul() * 0.6 && (facing > 0.42 || e.type === 'drone' && facing > 0) && losTo(from0, EYE);
+        const sees = d < AI.see * seeMul() * (e.inv ? 0.85 : 0.6) && (facing > 0.42 || e.type === 'drone' && facing > 0) && losTo(from0, EYE);
         const hears = floorOf(e.fy) === floorOf(P.pos.y - 1.7) && (d < (crouch ? 3 : 5) || (running && d < 12));
         if (sees || hears) {
-          e.alert = true; e.lost = 0; alertAround(g.position, 12, e.fy); e.cd = rand(0.6, 1.2);
+          e.alert = true; e.inv = null; e.lost = 0; alertAround(g.position, 12, e.fy); e.cd = rand(0.6, 1.2);
           if (e.type === 'boss' || e.type === 'jugg') say(`${e.name}이(가) 당신을 발견했습니다`);
         }
       }
@@ -4178,7 +4225,7 @@ function updateEnemy(e, dt, eye) {
       if (e.losT <= 0) {
         e.seen = dist < AI.see * seeMul() && losTo(from0, eye); e.losT = 0.3; e.noLos = e.seen ? 0 : e.noLos + 0.3;
         if (e.seen) { e.hunter = false; e.engaged = true; }
-        if (mode === 'raid' && e.anchor && !e.relentless && !e.seen && e.noLos > 18 && dist > 25) { e.alert = false; e.pt = { x:e.anchor.x, z:e.anchor.z }; e.ptT = 30; e.noLos = 0; return; }
+        if (mode === 'raid' && e.anchor && !e.relentless && !e.seen && e.noLos > 18 && dist > 25) { e.alert = false; e.inv = null; e.pt = { x:e.anchor.x, z:e.anchor.z }; e.ptT = 30; e.noLos = 0; return; }
       }
       const far = e.type === 'snp' ? 120 : e.type === 'bguard' ? 14 : e.type === 'jugg' ? AI.bFar + 6 : e.type === 'boss' ? AI.bFar + 4 : e.type === 'brute' ? AI.bFar : AI.gFar, near = e.type === 'snp' ? 0 : e.type === 'bguard' ? 4 : e.type === 'jugg' ? 4 : e.type === 'boss' ? AI.bNear + 2 : e.type === 'brute' ? AI.bNear : AI.gNear;
       const approach = dist > far || (!e.seen && e.noLos > 1.2);
@@ -5914,7 +5961,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.17.6';
+const GAME_VER = 'v1.2.18';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -6370,6 +6417,8 @@ function netEvent(m) {
   else if (m.k === 'loot') netDropRecv(m.d);
   else if (m.k === 'throw' && mt) mt.throwT = 0.6;
   else if (m.k === 'shot' && mt && mt.g.visible) {
+    // 적 계산을 맡은 사람(파티장)이 팀원, 다른 파티의 총소리도 적에게 들려 줌
+    if (netIsAI() && mode === 'raid') alertAround(mt.g.position, (m.d && m.d[0] === 0) ? 16 : 26, mt.g.position.y, true);
     mt.kick = 1;
     // 팀원 사격: 총구 쪽에서 바라보는 방향으로 짧은 궤적
     const o = mt.g.position.clone(); o.y += mt.flags & 1 ? 1.0 : 1.4;
