@@ -89,9 +89,11 @@ body:not(.is-raid) #consum{ display:none; }
 #scope.ret-mil .l{ right:50%; } #scope.ret-mil .r{ left:50%; } #scope.ret-mil .t{ bottom:50%; } #scope.ret-mil .b{ top:50%; }
 #scope.ret-mil .c{ display:none; } #scope.ret-mil .m{ display:block; }
 #scope.ret-mil .m1{ transform:translateY(4vmin); } #scope.ret-mil .m2{ transform:translateY(8vmin); } #scope.ret-mil .m3{ transform:translateX(-6vmin); } #scope.ret-mil .m4{ transform:translateX(6vmin); }
-#dot{ position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px; border-radius:50%; background:#ff3a2e; box-shadow:0 0 6px #ff3a2e; display:none; }
-#holo{ position:absolute; left:50%; top:50%; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%; border:2px solid rgba(255,70,50,.85); box-shadow:0 0 6px rgba(255,70,50,.6); display:none; }
-#holo i{ position:absolute; left:50%; top:50%; width:4px; height:4px; margin:-2px 0 0 -2px; border-radius:50%; background:#ff3a2e; }
+/* 레드닷: 가운데가 밝고 가장자리가 번지는 점 */
+#dot{ position:absolute; left:50%; top:50%; width:5px; height:5px; margin:-2.5px 0 0 -2.5px; border-radius:50%; background:radial-gradient(circle, #fff2ee 0, #ff4a36 45%, #ff2a1e 70%); box-shadow:0 0 3px 1px rgba(255,50,30,.85), 0 0 9px 2px rgba(255,40,20,.35); display:none; }
+/* 홀로그램: 큰 원과 위아래좌우 짧은 눈금, 가운데 작은 점 (빛 번짐 포함) */
+#holo{ position:absolute; left:50%; top:50%; width:52px; height:52px; margin:-26px 0 0 -26px; display:none; filter:drop-shadow(0 0 2px rgba(255,60,40,.9)) drop-shadow(0 0 5px rgba(255,40,20,.4)); }
+#holo svg{ width:100%; height:100%; overflow:visible; }
 #attTxt{ font-size:12px; color:var(--dim); margin-top:2px; }
 .picktitle{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 0 .6em; font-size:15px; font-weight:700; }
 .picktitle span{ font-size:12.5px; font-weight:500; color:var(--dim); }
@@ -389,7 +391,7 @@ body.is-raid .waveonly{ display:none; }
     <div id="bossBar"><span id="bossName">경비대장</span><b><i id="bossFill"></i></b></div>
     <div class="cross" id="cross"><i></i><i></i><i></i><i></i></div>
     <div id="scope"><i class="h l"></i><i class="h r"></i><i class="v t"></i><i class="v b"></i><i class="c"></i><i class="m m1"></i><i class="m m2"></i><i class="m m3"></i><i class="m m4"></i></div>
-    <div id="dot"></div><div id="holo"><i></i></div>
+    <div id="dot"></div><div id="holo"><svg viewBox="-26 -26 52 52"><circle r="21" fill="none" stroke="#ff4a36" stroke-width="1.6"/><g stroke="#ff4a36" stroke-width="1.6" stroke-linecap="round"><line x1="0" y1="-21" x2="0" y2="-16"/><line x1="0" y1="21" x2="0" y2="16"/><line x1="-21" y1="0" x2="-16" y2="0"/><line x1="21" y1="0" x2="16" y2="0"/></g><circle r="1.6" fill="#ffd8d0"/></svg></div>
     <div id="zoomTxt" class="num"></div>
     <div class="hitmark" id="hitmark"></div>
     <div id="reloadTip">재장전 중</div>
@@ -3325,37 +3327,99 @@ const MOUNT = [[0.105, -0.2], [0.075, -0.1], [0.14, -0.24], [0.09, -0.12], [0.1,
 const LASER_MOUNT = [[0.05, 0.0, -0.3], [0.06, -0.04, -0.6], [0.06, 0.0, -0.55], [0.09, 0.0, -0.4], [0.07, -0.02, -0.55], [0.06, 0.0, -0.6], [0.07, 0.0, -0.45]];
 const scopeBody = std('#1b1d21', { metalness:0.6, roughness:0.4 });
 function tube(g, r, len, y, z, mat = scopeBody) { const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 14), mat); t.rotation.x = Math.PI / 2; t.position.set(0, y, z); g.add(t); return t; }
+// ---------- 조준기, 레일 부착물 모형 ----------
+// 모든 조준기는 y + 0.06 높이에 광축(가운데)을 두고, 조준 시 그 높이가 화면 중앙에 오도록 맞춤 (이 높이는 바꾸지 않음)
+const optMat = {
+  body:std('#2b2f35', { metalness:0.5, roughness:0.36 }), dark:std('#141517', { metalness:0.4, roughness:0.5 }),
+  knurl:std('#3c4148', { metalness:0.7, roughness:0.3 }), steel:std('#8a9098', { metalness:0.9, roughness:0.25 }),
+  rubber:std('#101112', { metalness:0, roughness:0.95 }), amber:std('#e0a030', { metalness:0.3, roughness:0.45 })
+};
+// 축(z)을 중심으로 돌려 만든 둥근 부품: pts 는 [반지름, z] 점들 (닫힌 윤곽)
+function lathe(g, mat, pts, y, z, seg = 28) {
+  const geo = new THREE.LatheGeometry(pts.map(([r, zz]) => new THREE.Vector2(r, zz)), seg); geo.rotateX(Math.PI / 2);
+  const m = new THREE.Mesh(geo, mat); m.position.set(0, y, z); g.add(m); return m;
+}
+// 원기둥 (axis: 'x' 좌우, 'y' 위아래, 'z' 앞뒤)
+function cylA(g, mat, r, len, p, axis = 'y', seg = 16) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, seg), mat); m.position.set(p[0], p[1], p[2]);
+  if (axis === 'z') m.rotation.x = Math.PI / 2; else if (axis === 'x') m.rotation.z = Math.PI / 2; g.add(m); return m;
+}
+// 조절 다이얼: 홈이 파인 둥근 손잡이 (axis 방향으로 튀어나옴)
+function turret(g, r, h, p, axis) {
+  cylA(g, optMat.body, r * 0.75, h * 0.5, [p[0] - (axis === 'x' ? h * 0.25 : 0), p[1] - (axis === 'y' ? h * 0.25 : 0), p[2]], axis);
+  cylA(g, optMat.knurl, r, h * 0.6, [p[0] + (axis === 'x' ? h * 0.2 : 0), p[1] + (axis === 'y' ? h * 0.2 : 0), p[2]], axis, 20);
+  for (let k = 0; k < 3; k++) cylA(g, optMat.dark, r * 1.02, h * 0.04, [p[0] + (axis === 'x' ? h * (0.02 + k * 0.12) : 0), p[1] + (axis === 'y' ? h * (0.02 + k * 0.12) : 0), p[2]], axis, 20);
+}
+// 레일 고정 받침: 레일을 무는 집게, 왼쪽 고정 나사와 손잡이
+function railClamp(g, y, z, len) {
+  part(g, BOX, optMat.body, [0.044, 0.016, len], [0, y + 0.005, z]);
+  for (const sx of [-1, 1]) part(g, BOX, optMat.dark, [0.006, 0.02, len * 0.9], [sx * 0.024, y + 0.0, z]);
+  cylA(g, optMat.steel, 0.006, 0.058, [0, y + 0.002, z], 'x', 12);
+  cylA(g, optMat.knurl, 0.011, 0.008, [-0.031, y + 0.002, z], 'x', 14);
+}
 function buildScopeMesh(g, key, y, z) {
   if (key === 'none') return;
-  part(g, BOX, scopeBody, [0.05, 0.03, 0.12], [0, y + 0.01, z]);
-  // 모든 조준기는 y + 0.06 높이에 광축(가운데)을 두고, 조준 시 그 높이가 화면 중앙에 오도록 맞춤
   const cy = y + 0.06;
-  const lensMat = new THREE.MeshBasicMaterial({ color:'#ffb0a0', transparent:true, opacity:0.12, depthWrite:false });
   if (key === 'reddot') {
-    // 가운데가 뚫린 틀 + 옅은 렌즈 (시야를 가리지 않음)
-    part(g, BOX, scopeBody, [0.08, 0.016, 0.06], [0, cy - 0.036, z]);
-    part(g, BOX, scopeBody, [0.08, 0.01, 0.06], [0, cy + 0.037, z]);
-    part(g, BOX, scopeBody, [0.01, 0.08, 0.06], [-0.037, cy, z]); part(g, BOX, scopeBody, [0.01, 0.08, 0.06], [0.037, cy, z]);
-    part(g, BOX, scopeBody, [0.03, 0.03, 0.04], [0, cy - 0.055, z + 0.01]);
-    part(g, BOX, lensMat, [0.064, 0.058, 0.003], [0, cy, z - 0.02]);
+    // 레드닷: 고정 받침 위 둥근 통. 통 안쪽은 뚫려 있어 시야를 가리지 않고, 앞뒤 끝에 테가 있음. 위와 오른쪽에 조절 다이얼
+    railClamp(g, y, z, 0.055);
+    part(g, BOX, optMat.body, [0.034, 0.02, 0.048], [0, y + 0.022, z]);
+    lathe(g, optMat.body, [[0.0285, -0.03], [0.035, -0.03], [0.036, -0.026], [0.036, 0.02], [0.034, 0.028], [0.0285, 0.028], [0.0285, -0.03]], cy, z);
+    lathe(g, optMat.dark, [[0.0286, -0.031], [0.0368, -0.031], [0.0368, -0.0255], [0.0286, -0.0255], [0.0286, -0.031]], cy, z);   // 앞 테
+    turret(g, 0.0105, 0.016, [0, cy + 0.04, z + 0.002], 'y'); turret(g, 0.0105, 0.016, [0.04, cy, z + 0.002], 'x');
+    cylA(g, optMat.knurl, 0.012, 0.01, [-0.04, cy, z + 0.002], 'x', 20); cylA(g, optMat.dark, 0.008, 0.012, [-0.04, cy, z + 0.002], 'x', 14);   // 배터리 덮개
+    part(g, BOX, new THREE.MeshBasicMaterial({ color:'#7fa6ff', transparent:true, opacity:0.1, depthWrite:false }), [0.057, 0.057, 0.002], [0, cy, z - 0.026]);   // 앞 렌즈 (푸른 코팅)
   } else if (key === 'holo') {
-    part(g, BOX, scopeBody, [0.09, 0.02, 0.13], [0, cy - 0.045, z]);
-    part(g, BOX, scopeBody, [0.012, 0.09, 0.09], [-0.045, cy, z - 0.01]); part(g, BOX, scopeBody, [0.012, 0.09, 0.09], [0.045, cy, z - 0.01]);
-    part(g, BOX, scopeBody, [0.1, 0.012, 0.09], [0, cy + 0.045, z - 0.01]);
-    part(g, BOX, lensMat, [0.08, 0.075, 0.003], [0, cy, z - 0.05]);
+    // 홀로그램: 사각 창을 감싼 둥근 덮개(앞뒤 열림), 아래 배터리 몸통, 뒤 조작 버튼, 옆 고정 레버
+    railClamp(g, y, z, 0.11);
+    part(g, BOX, optMat.body, [0.05, 0.028, 0.13], [0, y + 0.024, z]);
+    cylA(g, optMat.knurl, 0.012, 0.03, [0, y + 0.024, z - 0.075], 'z', 18); cylA(g, optMat.dark, 0.0125, 0.004, [0, y + 0.024, z - 0.09], 'z', 18);   // 앞 배터리 마개
+    const hw = 0.048, hh = 0.046, t = 0.007, rr = 0.012, sh = new THREE.Shape();
+    sh.moveTo(-hw, -hh); sh.lineTo(hw, -hh); sh.lineTo(hw, hh - rr); sh.quadraticCurveTo(hw, hh, hw - rr, hh); sh.lineTo(-hw + rr, hh); sh.quadraticCurveTo(-hw, hh, -hw, hh - rr); sh.lineTo(-hw, -hh);
+    const hole = new THREE.Path(); const iw = hw - t, ih = hh - t;
+    hole.moveTo(-iw, -ih + 0.008); hole.lineTo(iw, -ih + 0.008); hole.lineTo(iw, ih - rr * 0.6); hole.quadraticCurveTo(iw, ih, iw - rr * 0.6, ih); hole.lineTo(-iw + rr * 0.6, ih); hole.quadraticCurveTo(-iw, ih, -iw, ih - rr * 0.6); hole.lineTo(-iw, -ih + 0.008);
+    sh.holes.push(hole);
+    const hood = new THREE.ExtrudeGeometry(sh, { depth:0.085, bevelEnabled:true, bevelThickness:0.002, bevelSize:0.0015, bevelSegments:2, curveSegments:6 });
+    hood.translate(0, 0, -0.0425); const hm = new THREE.Mesh(hood, optMat.body); hm.position.set(0, cy, z - 0.012); g.add(hm);
+    part(g, BOX, optMat.dark, [0.1, 0.006, 0.006], [0, cy + hh - 0.004, z - 0.056]);                                         // 앞 덮개 테
+    part(g, BOX, new THREE.MeshBasicMaterial({ color:'#cfe8d8', transparent:true, opacity:0.09, depthWrite:false }), [iw * 2, ih * 2 - 0.008, 0.002], [0, cy + 0.004, z + 0.024]);   // 창 유리
+    for (const [bx, c] of [[-0.014, '#2e3238'], [0, '#2e3238'], [0.014, '#3a2e2a']]) part(g, BOX, std(c, { metalness:0.3, roughness:0.6 }), [0.01, 0.01, 0.006], [bx, y + 0.024, z + 0.067]);   // 뒤 버튼
+    part(g, BOX, optMat.steel, [0.006, 0.012, 0.04], [0.03, y + 0.008, z + 0.02]);                                            // 고정 레버
   } else {
-    const L = key === 'mid' ? 0.2 : key === 'vari' ? 0.28 : 0.36, R = key === 'mid' ? 0.03 : 0.036;
-    tube(g, R, L, y + 0.06, z);
-    tube(g, R * 1.35, 0.06, y + 0.06, z - L / 2 - 0.02);
-    tube(g, R * 1.2, 0.05, y + 0.06, z + L / 2 + 0.01);
-    tube(g, R * 1.3, 0.005, y + 0.06, z - L / 2 - 0.052, glow('#4fa3e0'));
-    if (key !== 'mid') { tube(g, R * 1.25, 0.03, y + 0.06, z + 0.06, std('#e0a030')); }
+    // 확대 조준경: 앞 대물렌즈 통이 굵고, 가운데 다이얼 몸통, 뒤 접안부. 고리 두 개로 레일에 고정
+    const L = key === 'mid' ? 0.2 : key === 'vari' ? 0.28 : 0.36, R = key === 'mid' ? 0.03 : 0.036, Rb = R * (key === 'mid' ? 1.3 : 1.45), Re = R * 1.25;
+    const zf = -L / 2 - 0.05, zr = L / 2 + 0.03;
+    lathe(g, optMat.body, [[R * 0.9, zf], [Rb, zf], [Rb, zf + 0.045], [R, zf + 0.085], [R, zr - 0.07], [Re, zr - 0.035], [Re, zr], [R * 0.8, zr], [R * 0.8, zf]], cy, z, 32);
+    lathe(g, optMat.dark, [[Rb * 0.97, zf - 0.002], [Rb * 1.02, zf - 0.002], [Rb * 1.02, zf + 0.01], [Rb * 0.97, zf + 0.01], [Rb * 0.97, zf - 0.002]], cy, z, 32);   // 앞 테
+    lathe(g, optMat.rubber, [[Re * 0.85, zr], [Re * 1.06, zr], [Re * 1.06, zr + 0.02], [Re * 0.85, zr + 0.02], [Re * 0.85, zr]], cy, z, 32);                   // 눈 받침 고무
+    tube(g, Rb * 0.92, 0.003, cy, z + zf - 0.001, glow('#4fa3e0'));                                                                                           // 앞 렌즈 (푸른 코팅)
+    tube(g, Re * 0.82, 0.003, cy, z + zr + 0.018, new THREE.MeshBasicMaterial({ color:'#0b1218' }));                                                           // 접안 렌즈
+    part(g, BOX, optMat.body, [R * 2.2, R * 1.6, 0.07], [0, cy, z - 0.01]);                                                                                    // 다이얼 몸통
+    turret(g, 0.014, 0.022, [0, cy + R * 0.8 + 0.006, z - 0.01], 'y'); turret(g, 0.014, 0.022, [R * 1.1 + 0.006, cy, z - 0.01], 'x');
+    if (key !== 'mid') { turret(g, 0.012, 0.016, [-R * 1.1 - 0.004, cy, z - 0.01], 'x'); lathe(g, optMat.amber, [[Re * 1.01, zr - 0.03], [Re * 1.04, zr - 0.03], [Re * 1.04, zr - 0.012], [Re * 1.01, zr - 0.012], [Re * 1.01, zr - 0.03]], cy, z, 32); part(g, BOX, optMat.dark, [0.006, 0.01, 0.014], [Re * 1.03, cy, z + zr - 0.021]); }   // 시차 다이얼, 배율 고리와 손잡이
+    for (const rz of [-L * 0.28, L * 0.28]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.004, 0.006, 8, 28), optMat.dark); ring.position.set(0, cy, z + rz); g.add(ring);
+      part(g, BOX, optMat.dark, [0.02, cy - y - R - 0.004, 0.016], [0, (y + cy - R) / 2 + 0.002, z + rz]);
+      railClamp(g, y, z + rz, 0.022);
+    }
   }
 }
+// 레이저, 라이트: 둥근 모서리 몸통, 레일 집게, 뒤 누름 스위치. 레이저는 붉은 유리, 라이트는 반사판이 있는 큰 렌즈
 function buildLaserMesh(g, p, rail) {
-  part(g, BOX, scopeBody, [0.04, 0.045, 0.1], p);
-  if (railLaser(rail)) part(g, BOX, glow('#ff2a2a'), [0.018, 0.018, 0.006], [p[0], p[1] + (rail === 'combo' ? 0.011 : 0), p[2] - 0.052]);
-  if (railLight(rail)) part(g, BOX, glow('#fff1d0'), [0.026, rail === 'combo' ? 0.016 : 0.028, 0.006], [p[0], p[1] - (rail === 'combo' ? 0.011 : 0), p[2] - 0.052]);
+  const [x, yy, z] = p;
+  part(g, BOX, optMat.body, [0.036, 0.04, 0.095], [x, yy, z]);
+  for (const sx of [-1, 1]) part(g, BOX, optMat.body, [0.004, 0.032, 0.095], [x + sx * 0.019, yy, z]);
+  part(g, BOX, optMat.dark, [0.03, 0.012, 0.05], [x, yy + 0.025, z + 0.005]);                                                    // 레일 집게
+  part(g, BOX, optMat.rubber, [0.02, 0.018, 0.012], [x, yy, z + 0.052]);                                                        // 뒤 스위치
+  for (let k = 0; k < 3; k++) part(g, BOX, optMat.dark, [0.038, 0.003, 0.004], [x, yy, z - 0.02 + k * 0.012]);                  // 방열 홈
+  const front = z - 0.05;
+  if (railLaser(rail)) { const ly = yy + (rail === 'combo' ? 0.011 : 0); cylA(g, optMat.dark, 0.009, 0.006, [x, ly, front], 'z', 14); cylA(g, glow('#ff2a2a'), 0.0055, 0.003, [x, ly, front - 0.004], 'z', 12); }
+  if (railLight(rail)) {
+    const ly = yy - (rail === 'combo' ? 0.009 : 0), r = rail === 'combo' ? 0.011 : 0.016;
+    cylA(g, optMat.knurl, r + 0.003, 0.014, [x, ly, front + 0.002], 'z', 18);
+    cylA(g, std('#d8dce0', { metalness:1, roughness:0.15 }), r, 0.002, [x, ly, front - 0.006], 'z', 18);                         // 반사판
+    cylA(g, glow('#fff1d0'), r * 0.45, 0.003, [x, ly, front - 0.0065], 'z', 14);
+  }
 }
 const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.28), new THREE.MeshBasicMaterial({ color:'#ffd27a', transparent:true, opacity:0.95, depthWrite:false, side:THREE.DoubleSide }));
 flash.visible = false; vm.add(flash);
@@ -6184,7 +6248,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.18.8';
+const GAME_VER = 'v1.2.19';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
