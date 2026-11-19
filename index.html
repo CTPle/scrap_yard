@@ -283,10 +283,24 @@ body.dropping #dropHint{ display:flex; }
   font:inherit; font-weight:700; font-size:16px; background:var(--amber); color:#1c1408; border:0;
   padding:.7em 1.6em; cursor:pointer; clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);
 }
-.primary:focus-visible, .tb:focus-visible, #muteBtn:focus-visible, #fsBtn:focus-visible{ outline:3px solid var(--blue); outline-offset:3px; }
+.primary:focus-visible, .tb:focus-visible, #muteBtn:focus-visible, #fsBtn:focus-visible, #optBtn:focus-visible{ outline:3px solid var(--blue); outline-offset:3px; }
 .note{ font-size:13px; color:var(--dim); margin-top:1em; }
+#optOv{ z-index:7; background:var(--page); align-items:flex-start; }
+.optcard{ max-width:560px; margin:auto 0; }
+.opttabs{ display:flex; gap:6px; margin:0 0 1em; }
+.opttabs .opt{ font-size:14px; padding:6px 16px; }
+#optBody{ display:grid; gap:12px; margin-bottom:1.2em; }
+.orow{ display:grid; grid-template-columns:11.5em 1fr; gap:10px; align-items:center; font-size:14px; }
+.orow > span{ color:var(--ink); }
+.orow small{ display:block; color:var(--dim); font-size:11.5px; margin-top:2px; }
+.orow .opts{ gap:6px; }
+.orow .rng{ display:flex; align-items:center; gap:10px; }
+.orow input[type=range]{ flex:1; max-width:240px; accent-color:var(--amber); }
+.orow output{ color:var(--amber); min-width:3em; }
+.otip{ font-size:12.5px; color:var(--dim); margin:0; }
+@media (max-width:520px){ .orow{ grid-template-columns:1fr; gap:4px; } }
 #topBtns{ position:absolute; top:calc(10px + env(safe-area-inset-top,0px)); right:calc(10px + env(safe-area-inset-right,0px)); z-index:6; display:flex; gap:6px; }
-#muteBtn, #fsBtn{
+#muteBtn, #fsBtn, #optBtn{
   font:inherit; font-size:12px; font-weight:600; background:rgba(18,21,27,.6); color:var(--ink); border:1px solid rgba(241,233,216,.25); padding:5px 10px; cursor:pointer;
 }
 #touch{ position:absolute; inset:0; display:none; z-index:4; pointer-events:none; }
@@ -353,7 +367,7 @@ body.is-raid .waveonly{ display:none; }
   .top b{ font-size:12px; margin-left:4px; }
   #leftCol .tlean{ pointer-events:auto; flex-direction:row; }
   #extList{ font-size:10.5px; top:calc(96px + env(safe-area-inset-top,0px)); right:calc(10px + env(safe-area-inset-right,0px)); max-width:30vw; }
-  #muteBtn, #fsBtn{ font-size:10.5px; padding:4px 8px; }
+  #muteBtn, #fsBtn, #optBtn{ font-size:10.5px; padding:4px 8px; }
   #radar{ left:50%; margin-left:-48px; top:calc(30px + env(safe-area-inset-top,0px)); width:96px; height:96px; }
   #consum{ bottom:calc(64px + env(safe-area-inset-bottom,0px)); font-size:11px; }
   #bossBar{ top:calc(8px + env(safe-area-inset-top,0px)); width:min(240px, 30vw); font-size:11px; }
@@ -448,7 +462,7 @@ body.is-raid .waveonly{ display:none; }
     </div>
   </div>
 
-  <div id="topBtns"><button id="fsBtn" type="button" hidden>전체 화면</button><button id="muteBtn" type="button">소리 끄기 (M)</button></div>
+  <div id="topBtns"><button id="optBtn" type="button">설정</button><button id="fsBtn" type="button" hidden>전체 화면</button><button id="muteBtn" type="button">소리 끄기 (M)</button></div>
 
   <div id="dropHint"><div>저장 파일을 놓으면 진행 상황을 불러옵니다</div></div>
   <div class="overlay" id="startOv">
@@ -579,7 +593,7 @@ body.is-raid .waveonly{ display:none; }
     <div class="card">
       <h1>일시정지</h1>
       <p id="pauseMsg">화면을 클릭하면 이어서 진행합니다.</p>
-      <div class="hbtns"><button class="primary" id="resumeBtn">계속하기</button><button class="opt waveonly" id="quitTitleBtn">처음 화면으로</button><button class="opt raidonly" id="quitRaidBtn">출격 포기하고 나가기</button><button class="opt" id="newTabBtn" hidden>새 탭에서 열기</button></div>
+      <div class="hbtns"><button class="primary" id="resumeBtn">계속하기</button><button class="opt waveonly" id="quitTitleBtn">처음 화면으로</button><button class="opt raidonly" id="quitRaidBtn">출격 포기하고 나가기</button><button class="opt" id="pauseOptBtn">설정</button><button class="opt" id="newTabBtn" hidden>새 탭에서 열기</button></div>
       <p class="quitwarn raidonly">여기서 나가면 가지고 들어간 장비와 주운 물건을 잃습니다. (보안 파우치와 보험은 쓰러졌을 때와 같이 적용)</p>
     </div>
   </div>
@@ -597,6 +611,14 @@ body.is-raid .waveonly{ display:none; }
       <h1>쓰러졌습니다</h1>
       <div class="stats" id="overStats"></div>
       <div class="hbtns"><button class="primary" id="againBtn">다시 하기</button><button class="opt" id="overTitleBtn">처음 화면으로</button></div>
+    </div>
+  </div>
+  <div class="overlay" id="optOv" hidden>
+    <div class="card optcard">
+      <h1>설정</h1>
+      <div class="opttabs" role="tablist"><button class="opt" data-otab="gfx" role="tab">그래픽</button><button class="opt" data-otab="ctl" role="tab">조작</button></div>
+      <div id="optBody"></div>
+      <div class="hbtns"><button class="primary" id="optClose">닫기</button></div>
     </div>
   </div>
 </div>
@@ -805,9 +827,31 @@ const SND = (() => {
 
 // ---------- 렌더러와 장면 ----------
 const canvas = $('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 고해상도 화면에서 픽셀 수가 4배가 되지 않게 1.5배까지만
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// ---------- 그래픽 설정 ----------
+// 품질(낮음, 중간, 높음)을 고르거나 항목을 하나씩 직접 조절. 브라우저에 저장됨
+// res 해상도 배율, shadow 그림자 (0 끔, 1 낮음, 2 중간, 3 높음), small 작은 물체 그림자, flora 풀과 돌 밀도
+const GFX_PRESETS = {
+  low:  { res:0.6,  shadow:0, small:false, flora:0.3 },
+  mid:  { res:0.85, shadow:2, small:false, flora:0.6 },
+  high: { res:1,    shadow:3, small:true,  flora:1 }
+};
+const GFX = Object.assign({ preset:'high', aa:true, auto:true }, GFX_PRESETS.high);
+try {
+  const v = JSON.parse(localStorage.getItem('scrapyard-gfx') || 'null');
+  if (v && typeof v === 'object') {
+    if (GFX_PRESETS[v.preset] || v.preset === 'custom') GFX.preset = v.preset;
+    if (v.res >= 0.4 && v.res <= 1) GFX.res = v.res;
+    if ([0, 1, 2, 3].includes(v.shadow)) GFX.shadow = v.shadow;
+    if (typeof v.small === 'boolean') GFX.small = v.small;
+    if ([0, 0.3, 0.6, 1].includes(v.flora)) GFX.flora = v.flora;
+    if (typeof v.aa === 'boolean') GFX.aa = v.aa;
+    if (typeof v.auto === 'boolean') GFX.auto = v.auto;
+  }
+} catch (_) {}
+function saveGfx() { try { localStorage.setItem('scrapyard-gfx', JSON.stringify(GFX)); } catch (_) {} }
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:GFX.aa });   // 계단 현상 줄이기는 화면을 새로 만들 때만 바꿀 수 있음
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5) * GFX.res);   // 고해상도 화면에서 픽셀 수가 4배가 되지 않게 1.5배까지만
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = GFX.shadow === 3 ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.autoClear = false;
 const scene = new THREE.Scene();
 const SKY = new THREE.Color('#262d39');
@@ -822,14 +866,35 @@ wScene.add(wCam);
 wScene.add(new THREE.HemisphereLight('#c9d6e6', '#3a3128', 0.9));
 const wKey = new THREE.DirectionalLight('#ffe0b8', 0.8); wKey.position.set(1, 2, 1); wScene.add(wKey);
 
-// 저사양 모드: 화면이 느린 환경에서 해상도와 그림자를 낮춰 조작이 밀리지 않게 함
-// 단계 0 보통, 1 해상도 60% + 그림자 끔, 2 해상도 40%
-let lowSpec = 0;
-function setLowSpec(n) {
-  lowSpec = n;
-  renderer.setPixelRatio(n === 0 ? Math.min(devicePixelRatio, 1.5) : n === 1 ? 0.6 : 0.4);
-  if (typeof sun !== 'undefined' && n > 0) sun.castShadow = false;
+// 그래픽 설정을 지금 화면에 적용. 작은 물체 그림자는 맵을 새로 불러올 때 적용됨
+let sunWanted = true, gfxLevelDirty = false, shadowFrame = 0;
+function applyGfx() {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5) * GFX.res);
   if (typeof resize === 'function') resize();
+  if (typeof sun === 'undefined') return;
+  sun.castShadow = sunWanted && GFX.shadow > 0;
+  const type = GFX.shadow === 3 ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap, size = GFX.shadow === 1 ? 1024 : 2048;
+  if (renderer.shadowMap.type !== type) {
+    renderer.shadowMap.type = type;
+    for (const sc of [scene, wScene]) sc.traverse(o => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
+  }
+  if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  // 그림자 낮음: 그림자를 2프레임에 한 번만 다시 그림
+  renderer.shadowMap.autoUpdate = GFX.shadow !== 1; renderer.shadowMap.needsUpdate = true;
+  if (typeof level !== 'undefined' && level) applyFlora();
+}
+// 협곡의 풀, 돌: 놓인 순서가 무작위라 앞에서부터 일부만 그리면 고르게 줄어듦
+function applyFlora() { level.traverse(o => { if (o.userData.flora) o.count = Math.round(o.userData.flora * GFX.flora); }); }
+// 작은 물체(반지름 0.3m 미만)는 그림자를 드리우지 않게 함 (맵을 합치기 전에)
+function dropSmallShadows(root) {
+  if (GFX.small) return;
+  root.updateMatrixWorld(true); const sp = new THREE.Sphere(), sc = new THREE.Vector3();
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || !o.castShadow) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    o.getWorldScale(sc);
+    if (o.geometry.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z) < 0.3) o.castShadow = false;
+  });
 }
 function resize() {
   const w = innerWidth, h = innerHeight;
@@ -841,8 +906,9 @@ addEventListener('resize', resize); resize();
 
 const hemi = new THREE.HemisphereLight('#9fb3c8', '#3a3128', 0.6); scene.add(hemi);
 const sun = new THREE.DirectionalLight('#ffd6a8', 0.95);
-sun.position.set(22, 34, 12); sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.position.set(22, 34, 12); sun.castShadow = GFX.shadow > 0;
+sun.shadow.mapSize.set(GFX.shadow === 1 ? 1024 : 2048, GFX.shadow === 1 ? 1024 : 2048);
+renderer.shadowMap.autoUpdate = GFX.shadow !== 1;
 Object.assign(sun.shadow.camera, { left:-60, right:60, top:60, bottom:-60, near:1, far:120 });
 scene.add(sun);
 
@@ -2134,7 +2200,7 @@ function canyonScenery() {
         const g2 = geo.clone(), im = new THREE.InstancedMesh(g2, mat, part.length);
         part.forEach((v, i) => { dm.position.set(v[0], v[1], v[2]); dm.scale.set(v[3], v[4], v[5]); dm.rotation.set(v[7], v[6], v[7] * 0.7); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); });
         g2.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, k * 120 + 60), 90);
-        im.castShadow = false; im.receiveShadow = true; level.add(im);
+        im.castShadow = false; im.receiveShadow = true; im.userData.flora = part.length; level.add(im);
       }
     };
     inst(rockG, stoneM, stones, true); inst(blade, grassM[0], blades[0], false); inst(blade, grassM[1], blades[1], false);
@@ -2611,7 +2677,8 @@ const MAPS = {
 };
 function buildLevel(key) {
   SND.setEnv(key === 'lab' ? 'indoor' : key === 'canyon' ? 'canyon' : 'outdoor');
-  if (mapKey === key) return;
+  if (mapKey === key && !gfxLevelDirty) return;
+  gfxLevelDirty = false;
   if (level) {
     scene.remove(level);
     level.traverse(o => { if (o.isMesh) { if (o.geometry !== BOXG) o.geometry.dispose(); if (o.material !== railMat && o.material !== rampMat) o.material.dispose(); } });
@@ -2621,7 +2688,9 @@ function buildLevel(key) {
   level = new THREE.Group(); scene.add(level);
   mapKey = key; M = MAPS[key]; AI = M.ai; PANEL_Y = M.panelY || 5.95;
   M.build();
+  dropSmallShadows(level);
   mergeStatic(level);
+  applyFlora();
   FY = 0; BASE_START = START;
   // 조명 묶음: 다층 맵은 조명 LIGHT_POOL 개만 만들고 플레이어 근처 자리로 옮겨 다님
   LIGHT_POOL.length = 0;
@@ -2630,7 +2699,7 @@ function buildLevel(key) {
   const L = Object.assign({ bg:'#262d39', hemi:0.6, sky:'#9fb3c8', ground:'#3a3128', sun:0.95 }, M.light || {});
   scene.background.set(L.bg); scene.fog.color.set(L.bg);
   hemi.intensity = L.hemi; hemi.color.set(L.sky); hemi.groundColor.set(L.ground); sun.intensity = L.sun;
-  sun.castShadow = L.sun > 0 && !lowSpec;
+  sunWanted = L.sun > 0; sun.castShadow = sunWanted && GFX.shadow > 0;
   buildNav();
   scene.fog.near = M.fog[0]; scene.fog.far = M.fog[1];
   sun.position.set(...M.sun);
@@ -2779,7 +2848,8 @@ function buildNav() {
       walk[k * S + s] = 1; hh[k * S + s] = h; prev = h; s++;
     }
   }
-  NAV = { W, H, S, walk, hh, dist:new Int32Array(n).fill(-1), q:new Int32Array(n), t:0, reach:null };
+  NAV = { W, H, S, walk, hh, dist:new Int32Array(n).fill(-1), q:new Int32Array(n), t:0, reach:null, lastSrc:-2 };
+  buildNavEdges();
   // 시작 지점에서 걸어서 갈 수 있는 바닥만 표시 (막힌 지붕 위나 닫힌 금고 안에 적이 생기지 않게)
   const src = START ? navNode(START.x, START.z, START.y - 1.7) : -1;
   if (src >= 0) {
@@ -2815,22 +2885,38 @@ function navHas(x, z, y) {
 const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 // 두 칸 사이를 대각선으로 지날 때 옆 두 칸에도 비슷한 높이의 바닥이 있어야 함
 function navNear(k, h) { const { S, walk, hh } = NAV; for (let s = 0; s < S; s++) { const m = k * S + s; if (walk[m] && Math.abs(hh[m] - h) < 0.7) return true; } return false; }
-// toPlayer 가 참이면 플레이어 쪽으로 가는 길(이웃에서 이 노드로 올 수 있어야 함), 거짓이면 이 노드에서 나가는 길
-function navBfs(src, toPlayer, dist = NAV.dist) {
-  const { W, H, S, walk, hh, q } = NAV;
-  let head = 0, tail = 0; q[tail++] = src; dist[src] = 0;
-  while (head < tail) {
-    const c = q[head++], kc = (c / S) | 0, ci = kc % W, cj = (kc - ci) / W, hc = hh[c];
+// 노드마다 이웃 노드 목록을 맵을 만들 때 한 번만 계산해 둠 (길찾기 때마다 칸 경계, 대각선 통과 검사를 다시 하지 않게)
+// 높이 차가 3.5m 넘는 이웃은 어느 방향으로도 갈 수 없으므로 뺌. 오르기/떨어지기 방향 검사는 길찾기 때 함
+function buildNavEdges() {
+  const { W, H, S, walk, hh } = NAV, n = W * H * S;
+  const es = new Int32Array(n + 1); let ed = new Int32Array(n * 3 + 64), ne = 0;
+  for (let c = 0; c < n; c++) {
+    es[c] = ne; if (!walk[c]) continue;
+    const kc = (c / S) | 0, ci = kc % W, cj = (kc - ci) / W, hc = hh[c];
     for (const [di, dj] of NB) {
       const i = ci + di, j = cj + dj; if (i < 0 || j < 0 || i >= W || j >= H) continue;
-      const kk = j * W + i;
       if (di && dj && (!navNear(cj * W + i, hc) || !navNear(j * W + ci, hc))) continue;
+      const kk = j * W + i;
       for (let t = 0; t < S; t++) {
-        const m = kk * S + t; if (!walk[m] || dist[m] >= 0) continue;
-        const up = toPlayer ? hc - hh[m] : hh[m] - hc; // 올라가야 하는 높이
-        if (up > 0.75 || up < -3.5) continue;          // 0.75m 넘게 오르거나 3.5m 넘게 떨어질 수 없음 (경사로 칸 사이 높이 차 포함)
-        dist[m] = dist[c] + 1; q[tail++] = m;
+        const m = kk * S + t; if (!walk[m] || Math.abs(hh[m] - hc) > 3.5) continue;
+        if (ne >= ed.length) { const g = new Int32Array(ed.length * 2); g.set(ed); ed = g; }
+        ed[ne++] = m;
       }
+    }
+  }
+  es[n] = ne; NAV.es = es; NAV.ed = ed.slice(0, ne);
+}
+// toPlayer 가 참이면 플레이어 쪽으로 가는 길(이웃에서 이 노드로 올 수 있어야 함), 거짓이면 이 노드에서 나가는 길
+function navBfs(src, toPlayer, dist = NAV.dist) {
+  const { hh, q, es, ed } = NAV;
+  let head = 0, tail = 0; q[tail++] = src; dist[src] = 0;
+  while (head < tail) {
+    const c = q[head++], hc = hh[c], dc = dist[c] + 1;
+    for (let e = es[c], end = es[c + 1]; e < end; e++) {
+      const m = ed[e]; if (dist[m] >= 0) continue;
+      const up = toPlayer ? hc - hh[m] : hh[m] - hc; // 올라가야 하는 높이
+      if (up > 0.75 || up < -3.5) continue;          // 0.75m 넘게 오르거나 3.5m 넘게 떨어질 수 없음 (경사로 칸 사이 높이 차 포함)
+      dist[m] = dc; q[tail++] = m;
     }
   }
 }
@@ -2855,7 +2941,6 @@ function soundField(x, z, fy) {
 }
 function updateNav(dt) {
   NAV.t -= dt; if (NAV.t > 0) return; NAV.t = 0.35;
-  NAV.dist.fill(-1);
   const feet = P.pos.y - 1.7;
   let src = navNode(P.pos.x, P.pos.z, feet);
   if (src < 0 || Math.abs(NAV.hh[src] - feet) > 2) {
@@ -2864,8 +2949,11 @@ function updateNav(dt) {
       const m = navNode(P.pos.x + dx, P.pos.z + dz, feet); if (m < 0) continue;
       const d = Math.abs(NAV.hh[m] - feet) * 3 + Math.abs(dx) + Math.abs(dz); if (d < bd && Math.abs(NAV.hh[m] - feet) < 2) { bd = d; src = m; }
     }
-    if (src < 0) return;
+    if (src < 0) { if (NAV.lastSrc !== -1) NAV.dist.fill(-1); NAV.lastSrc = -1; return; }
   }
+  // 플레이어가 같은 칸에 있으면 길 지도가 그대로이므로 다시 계산하지 않음
+  if (src === NAV.lastSrc) return;
+  NAV.lastSrc = src; NAV.dist.fill(-1);
   navBfs(src, true);
 }
 function navXZ(m) { const k = (m / NAV.S) | 0, i = k % NAV.W, j = (k - i) / NAV.W; return [-BX + i + 0.5, -BZ + j + 0.5]; }
@@ -3975,6 +4063,16 @@ function addTracer(a, b) {
 }
 
 // ---------- 파편 ----------
+// 셰이더 미리 준비: 처음 그리는 물체나 효과(폭발, 파편, 수류탄)에서 화면이 잠깐 멈추지 않게 출격, 웨이브 시작 때 한꺼번에 준비
+const WARM = new THREE.Group(); WARM.visible = false;
+function warmShaders() {
+  if (!WARM.parent) {
+    for (const mat of [glow('#ffffff'), new THREE.MeshBasicMaterial({ color:'#ffb347', transparent:true, opacity:0.75, depthWrite:false }), fragMat])
+      WARM.add(new THREE.Mesh(BOX, mat));
+    scene.add(WARM);
+  }
+  try { renderer.compile(scene, camera); renderer.compile(wScene, wCam); } catch (_) {}
+}
 function burst(p, col, n, spd) {
   const mat = glow(col);
   for (let i = 0; i < n; i++) {
@@ -5939,6 +6037,7 @@ function beginRaid() {
   $('raidTop').hidden = false; $('waveTop').hidden = true;
   state = 'play';
   say(`출격: ${MAPS[mapKey].name}${raid.coop ? ' (협동전)' : ''}, 방어구 ${ARMOR_TIERS[HL.armor || 0].name}` + (insured ? ', 보험 가입' : ''));
+  warmShaders();
   if (!isTouch) { lockMode = true; requestLock(); }
 }
 let attBackup = null;
@@ -6256,7 +6355,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.20';
+const GAME_VER = 'v1.2.21';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -7100,7 +7199,7 @@ function begin() {
   for (const w of loadout) applyUpgradesTo(w, { rec:0, rel:5, mag:5 });
   buildLevel(mapChoice);
   aiming = false;
-  resetGame();
+  resetGame(); warmShaders();
   $('startOv').hidden = true; $('overOv').hidden = true; $('pauseOv').hidden = true; $('hud').hidden = false;
   state = 'play';
   if (!isTouch) { lockMode = true; requestLock(); }
@@ -7217,6 +7316,68 @@ if (isTouch) {
   const tl = document.querySelector('.tlean'); if (tl) col.appendChild(tl);
 }
 $('muteBtn').addEventListener('click', toggleMute);
+// ---------- 설정 화면 ----------
+let optTab = 'gfx', optBack = false;
+function renderOpt() {
+  const b = (attr, val, label, on, dis) => `<button class="opt" ${attr}="${val}" aria-pressed="${on}" ${dis ? 'disabled' : ''}>${label}</button>`;
+  document.querySelectorAll('[data-otab]').forEach(t => t.setAttribute('aria-pressed', t.dataset.otab === optTab));
+  let h = '';
+  if (optTab === 'gfx') {
+    const row = (name, help, inner) => `<div class="orow"><span>${name}${help ? `<small>${help}</small>` : ''}</span>${inner}</div>`;
+    h += row('품질', '한 번에 맞추기', `<div class="opts">${[['low', '낮음'], ['mid', '중간'], ['high', '높음']].map(([k, n]) => b('data-gp', k, n, GFX.preset === k)).join('')}${GFX.preset === 'custom' ? b('data-gp', 'custom', '사용자 지정', true) : ''}</div>`);
+    h += row('해상도', '낮출수록 가볍고 흐려짐', `<div class="rng"><input type="range" id="gRes" min="0.4" max="1" step="0.05" value="${GFX.res}"><output id="gResV" class="num">${Math.round(GFX.res * 100)}%</output></div>`);
+    h += row('그림자', '렉이 걸리면 먼저 낮추기', `<div class="opts">${['끔', '낮음', '중간', '높음'].map((n, i) => b('data-gs', i, n, GFX.shadow === i)).join('')}</div>`);
+    h += row('작은 물체 그림자', '다음 맵을 불러올 때 적용', `<div class="opts">${b('data-gm', 1, '켬', GFX.small)}${b('data-gm', 0, '끔', !GFX.small)}</div>`);
+    h += row('풀, 돌 밀도', '장거리 협곡', `<div class="opts">${[[0, '끔'], [0.3, '낮음'], [0.6, '중간'], [1, '높음']].map(([v, n]) => b('data-gf', v, n, GFX.flora === v)).join('')}</div>`);
+    h += row('계단 현상 줄이기', '게임을 다시 열면 적용', `<div class="opts">${b('data-ga', 1, '켬', GFX.aa)}${b('data-ga', 0, '끔', !GFX.aa)}</div>`);
+    h += row('느릴 때 자동 낮추기', '느려지면 한 단계씩 낮춤', `<div class="opts">${b('data-gu', 1, '켬', GFX.auto)}${b('data-gu', 0, '끔', !GFX.auto)}</div>`);
+    h += `<p class="otip">렉이 걸리면 그림자, 해상도 순서로 낮춰 보십시오.</p>`;
+  } else {
+    h += `<div class="orow"><span>마우스 감도</span><div class="rng"><input type="range" id="gSens" min="0.2" max="3" step="0.1" value="${sensMul}"><output id="gSensV" class="num">${sensMul.toFixed(1)}</output></div></div>`;
+  }
+  $('optBody').innerHTML = h;
+}
+// 하나라도 직접 바꾸면 사용자 지정, 프리셋 값과 같아지면 그 프리셋으로 표시
+function gfxChanged() {
+  GFX.preset = 'custom';
+  for (const k in GFX_PRESETS) { const p = GFX_PRESETS[k]; if (Object.keys(p).every(q => GFX[q] === p[q])) GFX.preset = k; }
+  applyGfx(); saveGfx(); renderOpt(); slowAcc = slowN = 0;
+}
+function openOpt() {
+  if (state === 'play') { state = 'paused'; mouseDown = false; aiming = false; for (const k in keys) keys[k] = false; }
+  if (document.pointerLockElement) document.exitPointerLock();
+  optBack = state === 'paused';
+  $('pauseOv').hidden = true; renderOpt(); $('optOv').hidden = false; $('optBtn').blur();
+}
+function closeOpt() {
+  $('optOv').hidden = true;
+  if (optBack && state === 'paused') { $('pauseOv').hidden = false; $('pauseMsg').textContent = '화면을 클릭하면 이어서 진행합니다.'; }
+}
+$('optBtn').addEventListener('click', e => { e.stopPropagation(); if ($('optOv').hidden) openOpt(); else closeOpt(); });
+$('pauseOptBtn').addEventListener('click', e => { e.stopPropagation(); openOpt(); });
+$('optClose').addEventListener('click', e => { e.stopPropagation(); closeOpt(); });
+$('optOv').addEventListener('click', e => {
+  e.stopPropagation();
+  const t = e.target.closest('button'); if (!t) { if (e.target === $('optOv')) closeOpt(); return; }
+  const d = t.dataset;
+  if (d.otab) { optTab = d.otab; renderOpt(); }
+  else if (d.gp) { if (GFX_PRESETS[d.gp]) { Object.assign(GFX, GFX_PRESETS[d.gp], { preset:d.gp }); applyGfx(); saveGfx(); renderOpt(); slowAcc = slowN = 0; } }
+  else if (d.gs !== undefined) { GFX.shadow = +d.gs; gfxChanged(); }
+  else if (d.gm !== undefined) { const v = d.gm === '1'; if (v !== GFX.small) gfxLevelDirty = true; GFX.small = v; gfxChanged(); }
+  else if (d.gf !== undefined) { GFX.flora = +d.gf; gfxChanged(); }
+  else if (d.ga !== undefined) { GFX.aa = d.ga === '1'; saveGfx(); renderOpt(); }
+  else if (d.gu !== undefined) { GFX.auto = d.gu === '1'; saveGfx(); renderOpt(); }
+});
+$('optOv').addEventListener('input', e => {
+  if (e.target.id === 'gRes') { GFX.res = parseFloat(e.target.value); $('gResV').textContent = Math.round(GFX.res * 100) + '%'; renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5) * GFX.res); resize(); }
+  if (e.target.id === 'gSens') {
+    sensMul = parseFloat(e.target.value); $('gSensV').textContent = sensMul.toFixed(1);
+    $('sens').value = sensMul; $('sensVal').textContent = sensMul.toFixed(1);
+    try { localStorage.setItem('scrapyard-sens', String(sensMul)); } catch (_) {}
+  }
+});
+$('optOv').addEventListener('change', e => { if (e.target.id === 'gRes') gfxChanged(); });
+addEventListener('keydown', e => { if (e.code === 'Escape' && !$('optOv').hidden) { e.preventDefault(); closeOpt(); } });
 // ---------- 전체 화면 ----------
 // 브라우저 주소창과 탭을 숨기고 게임 화면만 보이게 함. 한 번 켜면 기억해 두었다가, 나갔다 돌아올 때(화면 클릭) 다시 전체 화면으로
 const fsRoot = document.documentElement;
@@ -7245,16 +7406,24 @@ $('newTabBtn').addEventListener('click', e => { e.stopPropagation(); window.open
 // ---------- 루프 ----------
 resetGame();
 
-let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0;
+let last = performance.now(), idle = 0, slowAcc = 0, slowN = 0, autoDrops = 0;
+function autoDrop() {
+  autoDrops++;
+  if (GFX.preset === 'high' || (GFX.preset === 'custom' && GFX.res > 0.85)) Object.assign(GFX, GFX_PRESETS.mid, { preset:'mid' });
+  else if (GFX.preset !== 'low' && GFX.res > 0.6) Object.assign(GFX, GFX_PRESETS.low, { preset:'low' });
+  else { GFX.res = 0.4; GFX.preset = 'custom'; autoDrops = 3; }
+  applyGfx(); if (!$('optOv').hidden) renderOpt();
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = now - last;
   const dt = Math.min(0.05, Math.max(0, raw / 1000)); last = now;
-  // 최근 90프레임 평균이 초당 24프레임보다 느리면 한 단계씩 낮춤
-  if (lowSpec < 2 && raw < 1000 && (state === 'play' || state === 'title')) {
+  // 최근 90프레임 평균이 초당 24프레임보다 느리면 그래픽 품질을 한 단계씩 낮춤 (설정에서 끌 수 있음, 이번 접속에만 적용)
+  if (GFX.auto && autoDrops < 3 && raw < 1000 && (state === 'play' || state === 'title')) {
     slowAcc += raw; slowN++;
-    if (slowN >= 90) { if (slowAcc / slowN > 42) { setLowSpec(lowSpec + 1); if (state === 'play') say('화면이 느려 저사양 모드로 바꿨습니다'); } slowAcc = 0; slowN = 0; }
+    if (slowN >= 90) { if (slowAcc / slowN > 42) { autoDrop(); if (state === 'play') say('화면이 느려 그래픽 품질을 낮췄습니다 (설정에서 바꿀 수 있음)'); } slowAcc = 0; slowN = 0; }
   }
+  if (!renderer.shadowMap.autoUpdate) renderer.shadowMap.needsUpdate = (shadowFrame++ & 1) === 0;
   try {
   if (state === 'play' || state === 'inv') {
     updatePlayer(dt); updateWeapon(dt); updateLaser(); updateEnemies(dt); updateShots(dt); updateENades(dt); updateNades(dt); updatePickups(dt); if (mode === 'wave') updateWaves(dt); else updateRaid(dt); updateFx(dt); updateHud(dt);
