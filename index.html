@@ -963,6 +963,9 @@ const worldMeshes = [], colliders = [], RAMPS = [];
 const rust = containerTex('#8a4b2e'), steel = containerTex('#35607a');
 const CH = 3.4;
 let level = null, mapKey = null, M = null;
+// BX, BZ: 맵 배치용 반폭. WX: 충돌, 길찾기, 이동 제한에 쓰는 실제 반폭 (협곡처럼 절벽 안으로 파고든 공간이 있으면 BX 보다 넓음)
+// NAV_EXTRA: |x| > BX 인 곳 중 길찾기에 넣을 사각형 [minX, maxX, minZ, maxZ] (그 밖은 절벽 속이라 설 수 없음)
+let WX = 48, NAV_EXTRA = [];
 let BX = 48, BZ = 48, SPAWNS = [], PADS = [], PLAT = null, START = null, AI = null, MEDKITS = [];
 // 다층 맵: FY 는 지금 짓고 있는 층의 바닥 높이. 맵을 짓는 동안만 바뀌고, 모든 구조물이 이 높이를 기준으로 놓임
 // 충돌체는 y0(아래 끝)부터 h(위 끝)까지만 막음. 예전 맵은 y0 가 없어 0 으로 봄
@@ -972,10 +975,10 @@ const floorOf = y => (M && M.floorH ? Math.floor((y + 1) / M.floorH) : 0);
 const CG = 4, CG_PAD = 2;
 let colGrid = null;
 function buildColGrid() {
-  const W = Math.ceil(BX * 2 / CG) + 2, H = Math.ceil(BZ * 2 / CG) + 2, cells = new Array(W * H);
+  const W = Math.ceil(WX * 2 / CG) + 2, H = Math.ceil(BZ * 2 / CG) + 2, cells = new Array(W * H);
   for (let i = 0; i < cells.length; i++) cells[i] = [];
   for (const c of colliders) {
-    const i0 = Math.max(0, Math.floor((c.minX - CG_PAD + BX) / CG) + 1), i1 = Math.min(W - 1, Math.floor((c.maxX + CG_PAD + BX) / CG) + 1);
+    const i0 = Math.max(0, Math.floor((c.minX - CG_PAD + WX) / CG) + 1), i1 = Math.min(W - 1, Math.floor((c.maxX + CG_PAD + WX) / CG) + 1);
     const j0 = Math.max(0, Math.floor((c.minZ - CG_PAD + BZ) / CG) + 1), j1 = Math.min(H - 1, Math.floor((c.maxZ + CG_PAD + BZ) / CG) + 1);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) cells[j * W + i].push(c);
   }
@@ -983,7 +986,7 @@ function buildColGrid() {
 }
 function colsNear(x, z) {
   if (!colGrid) return colliders;
-  const i = Math.floor((x + BX) / CG) + 1, j = Math.floor((z + BZ) / CG) + 1;
+  const i = Math.floor((x + WX) / CG) + 1, j = Math.floor((z + BZ) / CG) + 1;
   if (i < 0 || j < 0 || i >= colGrid.W || j >= colGrid.H) return colliders;
   return colGrid.cells[j * colGrid.W + i];
 }
@@ -2010,6 +2013,8 @@ function buildLabB1() {
 // 장거리 협곡 길이 늘리기: 600m 기준 z 좌표를 1200m 좌표로 바꿈.
 // 출발 지점, 거점 3곳(뒤편 금고 포함), 끝 출구는 모양 그대로 옮기고(짝수 번째 구간) 그 사이 통로만 늘림(홀수 번째 구간)
 const CANYON_BZ = 600, CANYON_BX = 21;
+// 중간 벙커: 왼쪽 절벽 안으로 파고든 굴. 입구 앞 움푹 들어간 곳(x -23.2 ~ -21)과 벙커 안(x -42 ~ -24)은 절벽 속에 있음
+const CANYON_BUNKER = { zA:174, zB:214, face:-23.2, back:-42.6 };
 const CANYON_OLD = [-300, -285, -214, -174, -46, -4, 174, 206, 262, 300];
 const CANYON_NEW = [-600, -585, -416, -376, -71, -29, 396, 428, 562, 600];
 // 통로 구간(늘린 구간)의 물건은 넓어진 폭에 맞춰 x 도 벌림. 출발 지점과 거점 안은 그대로
@@ -2103,8 +2108,10 @@ function canyonScenery() {
     const f = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map:dirtTex, bumpMap:dirtTex, bumpScale:0.04, roughness:1 }));
     f.rotation.x = -Math.PI / 2; f.receiveShadow = true; level.add(f); worldMeshes.push(f);
   }
-  // 보이지 않는 경계 벽 (총알도 여기서 멈춤)
-  for (const [x, z, w, d] of [[0, -BZ - 0.5, BX * 2 + 2, 1], [0, BZ + 0.5, BX * 2 + 2, 1], [-BX - 0.5, 0, 1, BZ * 2 + 2], [BX + 0.5, 0, 1, BZ * 2 + 2]]) addBox(x, z, w, d, 40).visible = false;
+  // 보이지 않는 경계 벽 (총알도 여기서 멈춤). 왼쪽 벽은 벙커 굴 입구 자리만 비움 (그 둘레는 벙커 벽과 끝 막이가 막음)
+  const KB = CANYON_BUNKER, lw = (z0, z1) => addBox(-BX - 0.5, (z0 + z1) / 2, 1, z1 - z0, 40).visible = false;
+  for (const [x, z, w, d] of [[0, -BZ - 0.5, BX * 2 + 2, 1], [0, BZ + 0.5, BX * 2 + 2, 1], [BX + 0.5, 0, 1, BZ * 2 + 2]]) addBox(x, z, w, d, 40).visible = false;
+  lw(-BZ - 1, KB.zA); lw(KB.zB, BZ + 1);
   // ---- 절벽: 바닥에서는 경계선에 붙어 있다가 위로 갈수록 바깥으로 물러나는 바위벽, 꼭대기는 풀 ----
   const rockA = C('#86735f'), rockB = C('#a8957c'), rockC = C('#6f6458'), grass = C('#6a7a42'), grassD = C('#55663a');
   const cliffMat = new THREE.MeshStandardMaterial({ map:rockTex, vertexColors:true, flatShading:true, roughness:0.95, side:THREE.DoubleSide });
@@ -2130,6 +2137,12 @@ function canyonScenery() {
       }
     }
     grid(ZS, RS + 1, idx, sd > 0);
+    // 벙커 굴 입구: 왼쪽 절벽 아래쪽(높이 7.6m 아래)을 뚫음. 뒤에는 벙커 정면 벽과 입구 옆벽이 있고, 위쪽 바위는 처마처럼 남음
+    if (sd < 0) {
+      const inZone = v => pos[v * 3 + 2] > KB.zA - 1 && pos[v * 3 + 2] < KB.zB + 1.5 && pos[v * 3 + 1] < 7.6, keep = [];
+      for (let t = 0; t < idx.length; t += 3) if (!(inZone(idx[t]) && inZone(idx[t + 1]) && inZone(idx[t + 2]))) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+      idx.length = 0; idx.push(...keep);
+    }
     const m = meshFrom(pos, col, uv, idx, cliffMat); m.receiveShadow = true;   // 해가 거의 머리 위라 절벽 그림자는 거의 안 보여서 그리지 않음
   }
   // ---- 바깥 산: 절벽 꼭대기에서 이어져 멀어질수록 높아지는 지형 (멀리는 안개에 흐려짐) ----
@@ -2347,7 +2360,7 @@ function canyonFacilities() {
   const drums = (x, z) => { const ms = [MT.drumB, MT.drumY, MT.drumR]; for (const [a, b] of [[-0.32, -0.32], [0.32, -0.32], [-0.32, 0.32], [0.32, 0.32]]) if (rnd() < 0.85) drum(x + a, z + b, ms[Math.floor(rnd() * 3)]); D(MT.wood, x, 0.03, z, 1.3, 0.06, 1.3); solidDeco(x, z, 1.3, 1.3, 0.9); };
   const shelf = (x, z, w, d, h = 2.0) => {
     for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) D(MT.metal, x + a * (w / 2 - 0.03), h / 2, z + b * (d / 2 - 0.03), 0.05, h, 0.05);
-    for (let y = 0.15; y < h; y += 0.6) { D(MT.metal, x, y, z, w, 0.04, d); const n = Math.floor(rnd() * 4) + 1; for (let k = 0; k < n; k++) { const bw = 0.25 + rnd() * 0.3, along = w > d; D([MT.olive, MT.wood, MT.drumB, MT.mat][Math.floor(rnd() * 4)], x + (along ? (rnd() - 0.5) * (w - bw) : 0), y + 0.14, z + (along ? 0 : (rnd() - 0.5) * (d - bw)), along ? bw : d * 0.8, 0.24, along ? d * 0.8 : bw); } }
+    for (let y = 0.15; y < h; y += 0.6) { D(MT.metal, x, y, z, w, 0.04, d); const n = Math.floor(rnd() * 4) + 1; for (let k = 0; k < n; k++) { const bw = 0.25 + rnd() * 0.3, along = w > d; D([MT.olive, MT.wood, MT.drumB, MT.mat][Math.floor(rnd() * 4)], x + (along ? (rnd() - 0.5) * (w - bw) : 0), y + 0.14, z + (along ? 0 : (rnd() - 0.5) * (d - bw)), along ? bw : w * 0.8, 0.24, along ? d * 0.8 : bw); } }   // 세로로 긴 선반은 물건 폭을 선반 폭(w)에 맞춤
     solidDeco(x, z, w, d, h);
   };
   const bunk = (x, z, alongZ) => {
@@ -2448,56 +2461,90 @@ function canyonFacilities() {
     table(20.05, -301.9, 0.8, 1.2); lampGlow(18.9, 2.52, -301.3);
     bags(9.8, -313, 0.7, 4);
   }
-  // ---- 중간 벙커 (왼쪽, x -21~-1.6, z 176~212): 콘크리트 반지하 벙커. 막사, 지휘실, 창고와 보안 금고 ----
+  // ---- 중간 벙커 (왼쪽 절벽 속 굴, z 176~212): 절벽을 파고 들어간 콘크리트 방공호. 막사, 지휘실, 창고와 보안 금고 ----
+  // 입구 앞 움푹한 곳(x -23.2 ~ -21)에서 정면 벽의 출입구 2곳으로 들어감. 안쪽은 x -42 ~ -24
   {
-    const C = T.conc, H = 3.4;
-    floor(C, -20.4, 176.8, -2.4, 211.2);
-    addBox(-20.7, 194, 0.6, 36, H, { map:C });                 // 서쪽 (절벽 쪽)
-    addBox(-11.3, 176.4, 19.4, 0.8, H, { map:C });             // 북쪽
-    addBox(-11.3, 211.6, 19.4, 0.8, H, { map:C });             // 남쪽
-    // 동쪽 벽: 출입구 2곳 (막사, 지휘실)
-    const ew = (a, b) => addBox(-2, (a + b) / 2, 0.8, b - a, H, { map:C });
-    ew(176.8, 179.5); ew(181.9, 192); ew(194.4, 211.2);
-    for (const [a, b] of [[179.5, 181.9], [192, 194.4]]) { addBox(-2, (a + b) / 2, 0.8, b - a, H - 2.4, { map:C, base:2.4 }); D(MT.dark, -1.55, 2.45, (a + b) / 2, 0.1, 0.1, b - a + 0.3); D(glow('#ffcf6a'), -1.5, 2.65, (a + b) / 2, 0.08, 0.1, 0.5); }
+    const C = T.conc, H = 3.4, KB = CANYON_BUNKER, X0 = -42, X1 = -24;   // 안쪽 서쪽 끝, 동쪽 끝(정면 벽 안쪽면)
+    floor(C, X0, 176.8, X1, 211.2);
+    floor(C, X1, KB.zA, -21, KB.zB);                               // 입구 앞 바닥
+    addBox(X0 - 0.3, 194, 0.6, 36, H, { map:C });                 // 서쪽 (가장 안쪽)
+    addBox((X0 + X1) / 2 - 0.3, 176.4, X1 - X0 + 1.4, 0.8, H, { map:C });   // 북쪽
+    addBox((X0 + X1) / 2 - 0.3, 211.6, X1 - X0 + 1.4, 0.8, H, { map:C });   // 남쪽
+    // 정면 벽(동쪽, 굴 입구 쪽): 출입구 2곳 (막사, 지휘실). 위로는 절벽 속까지 6m 높이로 이어짐
+    const fx = X1 + 0.4, ew = (a, b) => addBox(fx, (a + b) / 2, 0.8, b - a, H, { map:C });
+    ew(KB.zA, 179.5); ew(181.9, 192); ew(194.4, KB.zB);
+    for (const [a, b] of [[179.5, 181.9], [192, 194.4]]) { addBox(fx, (a + b) / 2, 0.8, b - a, H - 2.4, { map:C, base:2.4 }); D(MT.dark, fx + 0.45, 2.45, (a + b) / 2, 0.1, 0.1, b - a + 0.3); D(glow('#ffcf6a'), fx + 0.5, 2.65, (a + b) / 2, 0.08, 0.1, 0.5); }
+    addBox(fx, (KB.zA + KB.zB) / 2, 0.8, KB.zB - KB.zA, 9.5 - H, { map:C, base:H });   // 정면 벽 윗부분 (위쪽 바위까지)
+    for (const [z0, z1] of [[KB.zA - 5, KB.zA], [KB.zB, KB.zB + 5]]) addBox(fx, (z0 + z1) / 2, 0.8, z1 - z0, 9.5, { map:C });   // 절벽 뒤로 이어지는 정면 벽
+    // 입구 양옆 콘크리트 벽 (뚫린 바위 가장자리를 가림)
+    for (const z of [KB.zA - 0.3, KB.zB + 0.3]) addBox((fx - 0.4 - 20.8) / 2, z, -20.8 - (fx - 0.4), 0.6, 7.8, { map:C });
     // 안쪽 칸막이 벽
-    const iw = (z, gA, gB) => { addBox((-20.4 + gA) / 2, z, gA + 20.4, 0.4, H, { map:C }); addBox((gB - 2.4) / 2, z, -2.4 - gB, 0.4, H, { map:C }); addBox((gA + gB) / 2, z, gB - gA, 0.4, H - 2.4, { map:C, base:2.4 }); };
-    iw(188, -12.2, -9.8); iw(200, -7.6, -5.2);
-    // 지붕: 콘크리트판 위에 흙과 풀
-    addBox(-11.3, 194, 20.2, 36.8, 0.6, { map:C, base:H });
-    { const top = new THREE.Mesh(BOXG, new THREE.MeshStandardMaterial({ map:T.dirt, color:'#8d9a6a', roughness:1 })); top.scale.set(19.6, 0.5, 36); top.position.set(-11.6, H + 0.85, 194); top.castShadow = top.receiveShadow = true; level.add(top); }
-    // 위장망: 지붕 끝에서 출입구 쪽으로 늘어뜨림
-    { const geo = new THREE.BufferGeometry(), x0 = -1.6, x1 = 2.6, y0 = H + 0.5, y1 = 2.65, za = 177, zb = 197.5;
-      geo.setAttribute('position', new THREE.Float32BufferAttribute([x0, y0, za, x1, y1, za, x1, y1, zb, x0, y0, zb], 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 2, 0, 2, 10, 0, 10], 2)); geo.setIndex([0, 1, 2, 0, 2, 3]); geo.computeVertexNormals();
-      const net = new THREE.Mesh(geo, MT.netM); net.castShadow = true; level.add(net);
-      for (const z of [177.3, 187.2, 197.2]) D(MT.dark, 2.6, 1.32, z, 0.08, 2.64, 0.08); }
-    // 출입구 앞 방폭벽 (안이 곧장 들여다보이지 않게)
-    addBox(1.4, 180.7, 0.8, 5, 2.2, { map:C }); addBox(1.4, 193.2, 0.8, 5, 2.2, { map:C });
-    bags(0.6, 174.9, 3.2, 0.7); bags(0.6, 213.1, 3.2, 0.7);
-    label('제7 방공호', -1.56, 2.95, 186.8, 3.2, 0.8, Math.PI / 2, '#e8e2c8');
-    label('관계자 외 출입 금지', -1.56, 1.8, 186.8, 2.6, 0.45, Math.PI / 2, '#ffffff', '#a8231a');
+    const iw = (z, gA, gB) => { addBox((X0 + gA) / 2, z, gA - X0, 0.4, H, { map:C }); addBox((gB + X1) / 2, z, X1 - gB, 0.4, H, { map:C }); addBox((gA + gB) / 2, z, gB - gA, 0.4, H - 2.4, { map:C, base:2.4 }); };
+    iw(188, -33.8, -31.4); iw(200, -29.2, -26.8);
+    // 천장 (위는 절벽 바위)
+    addBox((X0 + X1) / 2, 194, X1 - X0 + 1.6, 36.8, 0.6, { map:C, base:H });
+    // 입구 앞: 방폭벽 (안이 곧장 들여다보이지 않게), 모래주머니, 입구 위 처마 조명
+    addBox(-19.8, 180.7, 0.8, 5, 2.2, { map:C }); addBox(-19.8, 193.2, 0.8, 5, 2.2, { map:C });
+    bags(-19.4, 174.9, 2.6, 0.7); bags(-19.4, 213.1, 2.6, 0.7);
+    for (const z of [175.2, 186.8, 198.4, 210]) { D(MT.dark, -21.6, 2.7, z, 0.25, 5.4, 0.25); solidDeco(-21.6, z, 0.25, 0.25, 5.4); }   // 입구를 받치는 강철 기둥
+    D(MT.dark, -21.6, 5.45, 194, 0.3, 0.3, 36);
+    label('제7 방공호', fx + 0.44, 2.95, 186.8, 3.2, 0.8, Math.PI / 2, '#e8e2c8');
+    label('관계자 외 출입 금지', fx + 0.44, 1.8, 186.8, 2.6, 0.45, Math.PI / 2, '#ffffff', '#a8231a');
     // 막사: 2층 침대, 사물함, 탁자
-    for (const z of [178.2, 181.2, 184.2]) bunk(-19.85, z, true);
-    addBox(-14.5, 177.1, 2.6, 0.55, 1.9, { color:'#56604a', metal:0.4 });
-    for (let k = 0; k < 4; k++) D(MT.dark, -15.47 + k * 0.65, 1.0, 177.39, 0.02, 1.7, 0.02);
-    table(-11.5, 183, 2, 1); D(MT.olive, -11.8, 0.98, 183.1, 0.4, 0.12, 0.3);
+    for (const z of [178.2, 181.2, 184.2]) bunk(X0 + 0.55, z, true);
+    addBox(-36.1, 177.1, 2.6, 0.55, 1.9, { color:'#56604a', metal:0.4 });
+    for (let k = 0; k < 4; k++) D(MT.dark, -37.07 + k * 0.65, 1.0, 177.39, 0.02, 1.7, 0.02);
+    table(-33.1, 183, 2, 1); D(MT.olive, -33.4, 0.98, 183.1, 0.4, 0.12, 0.3);
     // 지휘실: 작전 탁자(빛나는 지도), 통신 장비, 총기 거치대
-    table(-12, 194, 3, 1.6, MT.dark); D(glow('#3fbf8f'), -12, 0.915, 194, 2.7, 0.01, 1.35);
-    addBox(-19.9, 193.5, 0.8, 6, 1.1, { color:'#33393e', metal:0.4 });
-    for (let k = 0; k < 4; k++) { D(glow(['#5fd0ff', '#7dffb0', '#ffcf6a', '#5fd0ff'][k]), -19.48, 1.4, 191.2 + k * 1.5, 0.03, 0.45, 0.8); D(MT.dark, -19.6, 1.4, 191.2 + k * 1.5, 0.2, 0.55, 0.95); }
-    addBox(-16, 199.45, 4, 0.5, 1.9, { color:'#3d4338', metal:0.3 });
-    for (let k = 0; k < 6; k++) D(MT.dark, -17.6 + k * 0.65, 1.2, 199.12, 0.08, 1.1, 0.1);
+    table(-33.6, 194, 3, 1.6, MT.dark); D(glow('#3fbf8f'), -33.6, 0.915, 194, 2.7, 0.01, 1.35);
+    addBox(X0 + 0.5, 193.5, 0.8, 6, 1.1, { color:'#33393e', metal:0.4 });
+    for (let k = 0; k < 4; k++) { D(glow(['#5fd0ff', '#7dffb0', '#ffcf6a', '#5fd0ff'][k]), X0 + 0.92, 1.4, 191.2 + k * 1.5, 0.03, 0.45, 0.8); D(MT.dark, X0 + 0.8, 1.4, 191.2 + k * 1.5, 0.2, 0.55, 0.95); }
+    addBox(-37.6, 199.45, 4, 0.5, 1.9, { color:'#3d4338', metal:0.3 });
+    for (let k = 0; k < 6; k++) D(MT.dark, -39.2 + k * 0.65, 1.2, 199.12, 0.08, 1.1, 0.1);
     // 창고 동쪽: 상자와 선반
-    crate(-9.5, 209.8); crate(-6.8, 210.1, 1.4); shelf(-3.1, 206, 0.7, 6, 2.0);
+    crate(-31.1, 209.8); crate(-28.4, 210.1, 1.4); shelf(X1 - 0.7, 206, 0.7, 6, 2.0);
     // 조명
-    for (const [x, z] of [[-11, 182], [-11, 194], [-8, 205.5]]) { lampGlow(x, H - 0.08, z); addPointLight('#ffd9a0', 0.9, 16, x, H - 0.4, z); }
+    for (const [x, z] of [[-32.6, 182], [-32.6, 194], [-29.6, 205.5]]) { lampGlow(x, H - 0.08, z); addPointLight('#ffd9a0', 0.9, 16, x, H - 0.4, z); }
     // 보안 금고 (카드키)
-    addVault({ h:H, cx:-17.2, cz:205.7, rect:[-20.4, -14, 200.2, 211.2],
-      walls:[[-14, 202.4, 0.4, 4.4], [-14, 208.9, 0.4, 4.6]], gate:[-14, 205.6, 0.3, 2], loot:[[-18.5, 203.2], [-18.5, 208.6]], table:'vault', n:4 });
+    addVault({ h:H, cx:-38.8, cz:205.7, rect:[X0, -35.6, 200.2, 211.2],
+      walls:[[-35.6, 202.4, 0.4, 4.4], [-35.6, 208.9, 0.4, 4.6]], gate:[-35.6, 205.6, 0.3, 2], loot:[[-40.1, 203.2], [-40.1, 208.6]], table:'vault', n:4 });
   }
   // 초소와 감시탑
   guardPost(518.5, -1); guardPost(279, 1); guardPost(-120, 1); guardPost(-501, 1);
   tower(24.3, -1); // 단상 끝이 길찾기 칸 중심(.5)에 걸리지 않게 0.3 비켜 둠
+  // ---- 통로 엄폐물에 쓰는 소품 (build 에서 빈자리에 흩어 놓음). 크기는 [가로, 세로] 발자국 ----
+  const rockM = new THREE.MeshStandardMaterial({ color:'#8c7c68', roughness:1, flatShading:true }), rockM2 = new THREE.MeshStandardMaterial({ color:'#76695a', roughness:1, flatShading:true });
+  const ROCK = new THREE.DodecahedronGeometry(1, 0);
+  const carCols = [MT.drumR, MT.truck, std('#6b6f74', { metalness:0.35, roughness:0.55 }), std('#8a7a52', { metalness:0.3, roughness:0.6 })];
+  return {
+    // 바위 무더기: 큰 바위 하나와 작은 바위 1~2개
+    rocks(x, z) {
+      const r = 1.1 + rnd() * 0.5, sy = 0.75 + rnd() * 0.25;
+      const m = deco(ROCK, rnd() < 0.5 ? rockM : rockM2, [r, r * sy, r * (0.85 + rnd() * 0.3)], [x, r * sy * 0.55, z]); m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3); m.receiveShadow = true;
+      for (let k = 0, n = 1 + Math.floor(rnd() * 2); k < n; k++) { const a = rnd() * 6.28, rr = 0.35 + rnd() * 0.3; const q = deco(ROCK, rockM2, [rr, rr * 0.8, rr], [x + Math.cos(a) * (r + 0.2), rr * 0.4, z + Math.sin(a) * (r + 0.2)]); q.rotation.set(rnd() * 3, rnd() * 3, 0); }
+      solidDeco(x, z, r * 1.6, r * 1.6, r * sy * 1.5);
+      return [r * 2.4, r * 2.4];
+    },
+    // 모래주머니 벽 (가로 또는 세로)
+    sandbags(x, z, alongX) { const L = 3 + Math.floor(rnd() * 3); if (alongX) bags(x, z, L, 0.7, 1.15); else bags(x, z, 0.7, L, 1.15); return alongX ? [L, 0.7] : [0.7, L]; },
+    // 버려진 차: 차체, 지붕, 바퀴, 깨진 창 (방향은 세로 또는 가로에서 조금 틀어짐)
+    car(x, z) {
+      const along = rnd() < 0.6, ry = (along ? 0 : Math.PI / 2) + (rnd() - 0.5) * 0.4, g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; level.add(g);
+      const col = carCols[Math.floor(rnd() * carCols.length)];
+      deco(BOXG, col, [1.9, 0.75, 4.2], [0, 0.72, 0], g); deco(BOXG, col, [1.75, 0.6, 2.1], [0, 1.4, -0.25], g);
+      deco(BOXG, MT.glass, [1.6, 0.48, 0.05], [0, 1.42, 0.82], g); deco(BOXG, MT.glass, [1.6, 0.48, 0.05], [0, 1.42, -1.32], g);
+      for (const sx of [-1, 1]) for (const sz of [-1.35, 1.35]) { const w = deco(CYL, MT.rubber, [0.36, 0.26, 0.36], [sx * 0.88, 0.36, sz], g); w.rotation.z = Math.PI / 2; }
+      deco(BOXG, MT.dark, [1.95, 0.18, 0.2], [0, 0.5, 2.12], g); deco(BOXG, MT.dark, [1.95, 0.18, 0.2], [0, 0.5, -2.12], g);
+      const c = Math.abs(Math.cos(ry)), sn = Math.abs(Math.sin(ry)), w = c * 1.9 + sn * 4.2, d = sn * 1.9 + c * 4.2;
+      solidDeco(x, z, w, d, 1.7); return [w, d];
+    },
+    // 콘크리트 덩어리 2~3개
+    blocks(x, z) {
+      const n = 2 + Math.floor(rnd() * 2), alongX = rnd() < 0.5;
+      for (let k = 0; k < n; k++) { const ox = alongX ? (k - (n - 1) / 2) * 1.5 : (rnd() - 0.5) * 0.3, oz = alongX ? (rnd() - 0.5) * 0.3 : (k - (n - 1) / 2) * 1.5, h = 1.2 + rnd() * 0.5; addBox(x + ox, z + oz, 1.2, 1.2, h, { map:T.conc }); }
+      return alongX ? [n * 1.5, 1.5] : [1.5, n * 1.5];
+    }
+  };
 }
 const MAPS = {
   yard: {
@@ -2586,6 +2633,7 @@ const MAPS = {
     ai:{ gNear:26, gFar:48, bNear:20, bFar:40, dNear:22, dFar:36, see:135, shotMul:1.35, spreadMul:0.45, life:5 },
     build() {
       BX = CANYON_BX; BZ = CANYON_BZ;
+      WX = BX + 23; NAV_EXTRA = [[CANYON_BUNKER.back - 0.4, -BX, CANYON_BUNKER.zA - 1, CANYON_BUNKER.zB + 1]];   // 절벽 속 벙커도 길찾기에 넣음
       const Z = CZ, X = x => x * BX / 14;
       const canyonFlora = canyonScenery();
       // 출발 지점: 남쪽 끝 고지대와 경사로, 흉벽
@@ -2650,7 +2698,7 @@ const MAPS = {
       // 4구간: 3거점 ~ 끝, 탈출구 3
       barrier(X(0), Z(-225), 8, 0.8, 1.3); crate(X(-11), Z(-235)); crate(X(11), Z(-241));
       barrier(X(-6), Z(-258), 8, 0.8, 1.3); pillar(X(10), Z(-268));
-      canyonFacilities();
+      const props = canyonFacilities();
       // 추가 엄폐물: 통로 구간마다 약 16m 간격으로 배치. 고정된 난수라 매번 같은 자리에 놓임
       // 기존 구조물과는 2.2m 이상, 전리품 상자, 탈출구, 미니게임 스폰 지점과는 3m 이상 띄움
       { let seed = 20261006; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
@@ -2669,6 +2717,32 @@ const MAPS = {
             else if (t < 0.8) { if (free(x, zz, 4, 2)) { crate(x - 1, zz); crate(x + 1.05, zz, 1.4); } }              // 큰 상자와 작은 상자
             else if (t < 0.92) { if (free(x, zz, 2, 2)) pillar(x, zz); }                                             // 기둥
             else if (free(x, zz, 3.2, 8)) addBox(x, zz, 3.2, 8, CH, { map:r2 < 0.5 ? steel : rust });                // 컨테이너
+          }
+        }
+        // 엄폐물 늘리기 (2026-11-20): 협곡 전체(출발 고지대 앞 ~ 북쪽 끝)에 약 7m 간격으로 한 줄에 1~2개씩 더 놓음
+        // 거점 출입구, 보스와 호위 자리, 벙커 굴 입구 앞은 비워 둠
+        const R = RAID.canyon, gates = [Z(190), Z(-20), Z(-190)].flatMap(z0 => [[9, z0 + 14], [-9, z0 - 14], [9, z0 + 10.5], [-9, z0 - 10.5]]);
+        keep.push(...gates, ...R.spawns.map(p => [p.x, p.z]));
+        for (const b of R.bosses) { for (const q of (b.bosses || [b])) keep.push(q.at); for (const e of b.escorts) keep.push([e[1], e[2]]); if (b.boxAt) keep.push(b.boxAt); }
+        const KB = CANYON_BUNKER, startZ = Z(274), clear = (x, z, w, d) => free(x, z, w, d) && !(x - w / 2 < -15 && z + d / 2 > KB.zA - 2 && z - d / 2 < KB.zB + 2) && !RAMPS.some(r => x + w / 2 > r.minX - 1 && x - w / 2 < r.maxX + 1 && z + d / 2 > r.minZ - 1 && z - d / 2 < r.maxZ + 1)
+          && !colliders.some(c => c.plat && x + w / 2 > c.minX - 1 && x - w / 2 < c.maxX + 1 && z + d / 2 > c.minZ - 1 && z - d / 2 < c.maxZ + 1);
+        let placed = 0;
+        for (let z = -BZ + 14; z < startZ; z += 7) {
+          for (let k = 0; k < 2; k++) {
+            if (k === 1 && rnd() < 0.45) continue;
+            const side = k === 0 ? (rnd() < 0.5 ? -1 : 1) : 0, x = Math.round((side ? side * (3 + rnd() * (BX - 7)) : (rnd() * 2 - 1) * (BX - 5)) * 2) / 2, zz = Math.round((z + (rnd() - 0.5) * 5) * 2) / 2, t = rnd();
+            // 놓기 전에 발자국 크기로 빈자리 확인 (모양마다 크기가 달라서 넉넉하게 먼저 봄)
+            const fp = t < 0.22 ? [5.5, 0.8] : t < 0.4 ? [3.2, 3.2] : t < 0.56 ? [5, 5] : t < 0.7 ? [4.4, 4.4] : t < 0.82 ? [4.5, 4.5] : t < 0.9 ? [4, 2] : t < 0.96 ? [2, 2] : [3.2, 8];
+            if (!clear(x, zz, fp[0], fp[1])) continue;
+            if (t < 0.22) barrier(x, zz, 5 + Math.floor(rnd() * 2), 0.8);
+            else if (t < 0.4) props.rocks(x, zz);
+            else if (t < 0.56) props.sandbags(x, zz, rnd() < 0.65);
+            else if (t < 0.7) props.car(x, zz);
+            else if (t < 0.82) props.blocks(x, zz);
+            else if (t < 0.9) { crate(x - 1, zz); crate(x + 1.05, zz, 1.4); }
+            else if (t < 0.96) pillar(x, zz);
+            else addBox(x, zz, 3.2, 8, CH, { map:rnd() < 0.5 ? steel : rust });
+            placed++;
           }
         }
       }
@@ -2694,7 +2768,9 @@ function buildLevel(key) {
   FY = 0; WAVE_START = null; STAIRS = []; LIGHT_SPOTS = []; FLOOR_GROUPS = []; colGrid = null;
   level = new THREE.Group(); scene.add(level);
   mapKey = key; M = MAPS[key]; AI = M.ai; PANEL_Y = M.panelY || 5.95;
+  WX = 0; NAV_EXTRA = [];
   M.build();
+  if (!WX) WX = BX;
   dropSmallShadows(level);
   mergeStatic(level);
   applyFlora();
@@ -2831,10 +2907,11 @@ function disposeModel(root) { root.traverse(o => { if (o.userData && o.userData.
 const NAV_S = 4;
 function buildNav() {
   buildColGrid(); SOUND_FIELDS = [];
-  const W = Math.ceil(BX * 2), H = Math.ceil(BZ * 2), S = NAV_S, n = W * H * S;
+  const W = Math.ceil(WX * 2), H = Math.ceil(BZ * 2), S = NAV_S, n = W * H * S;
   const walk = new Uint8Array(n), hh = new Float32Array(n).fill(NaN);
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
-    const x = -BX + i + 0.5, z = -BZ + j + 0.5, k = j * W + i;
+    const x = -WX + i + 0.5, z = -BZ + j + 0.5, k = j * W + i;
+    if (Math.abs(x) > BX && !NAV_EXTRA.some(r => x > r[0] && x < r[1] && z > r[2] && z < r[3])) continue;   // 절벽 속
     const near = colsNear(x, z);
     // 이 칸에서 설 수 있는 높이 후보: 지면, 바닥판과 단상의 윗면, 경사로
     const cand = [0];
@@ -2868,7 +2945,7 @@ function buildNav() {
   }
 }
 function navCell(x, z) {
-  const i = Math.floor(x + BX), j = Math.floor(z + BZ);
+  const i = Math.floor(x + WX), j = Math.floor(z + BZ);
   if (i < 0 || j < 0 || i >= NAV.W || j >= NAV.H) return -1;
   return j * NAV.W + i;
 }
@@ -2964,7 +3041,7 @@ function updateNav(dt) {
   NAV.lastSrc = src; NAV.dist.fill(-1);
   navBfs(src, true);
 }
-function navXZ(m) { const k = (m / NAV.S) | 0, i = k % NAV.W, j = (k - i) / NAV.W; return [-BX + i + 0.5, -BZ + j + 0.5]; }
+function navXZ(m) { const k = (m / NAV.S) | 0, i = k % NAV.W, j = (k - i) / NAV.W; return [-WX + i + 0.5, -BZ + j + 0.5]; }
 // 플레이어 쪽으로 가는 방향. feet 는 적의 발 높이(드론은 아래 바닥 높이)
 function flowDir(p, feet = p.y, dist = NAV && NAV.dist) {
   if (!NAV) return null;
@@ -3030,7 +3107,7 @@ function groundAt(x, z, r, feet) {
   return g;
 }
 function insideSolid(v) {
-  if (Math.abs(v.x) > BX || Math.abs(v.z) > BZ || v.y < 0 || (M.ceil && v.y > M.ceil)) return true;
+  if (Math.abs(v.x) > WX || Math.abs(v.z) > BZ || v.y < 0 || (M.ceil && v.y > M.ceil)) return true;
   for (const c of colsNear(v.x, v.z)) if (v.x > c.minX && v.x < c.maxX && v.z > c.minZ && v.z < c.maxZ && v.y < c.h && v.y >= (c.y0 || 0)) return true;
   for (const r of RAMPS) if (v.x > r.minX && v.x < r.maxX && v.z > r.minZ && v.z < r.maxZ && v.y >= r.B && v.y < rampH(r, v.z)) return true;
   return false;
@@ -4981,7 +5058,7 @@ function updateEnemy(e, dt, eye) {
       if (g.position.y <= gnd) { g.position.y = gnd; e.vy = 0; }
       e.fy = g.position.y;
     }
-    g.position.x = clamp(g.position.x, -BX + e.r, BX - e.r); g.position.z = clamp(g.position.z, -BZ + e.r, BZ - e.r);
+    g.position.x = clamp(g.position.x, -WX + e.r, WX - e.r); g.position.z = clamp(g.position.z, -BZ + e.r, BZ - e.r);
     const moved = Math.hypot(g.position.x - e.last.x, g.position.z - e.last.z);
     e.mv += (Math.min(20, moved / Math.max(dt, 1e-3)) - e.mv) * Math.min(1, dt * 8);
     if (ml > 0.3 && moved < e.speed * dt * 0.25) {
@@ -5086,7 +5163,7 @@ function updatePlayer(dt) {
   P.feet = P.pos.y - 1.7;
   P.pos.x += vx * dt; P.pos.z += vz * dt;
   pushOut(P.pos, 0.4, P.feet);
-  P.pos.x = clamp(P.pos.x, -BX + 0.4, BX - 0.4); P.pos.z = clamp(P.pos.z, -BZ + 0.4, BZ - 0.4);
+  P.pos.x = clamp(P.pos.x, -WX + 0.4, WX - 0.4); P.pos.z = clamp(P.pos.z, -BZ + 0.4, BZ - 0.4);
   P.vy -= 20 * dt; P.pos.y += P.vy * dt;
   const gnd = groundAt(P.pos.x, P.pos.z, 0.4, P.pos.y - 1.7) + 1.7;
   if (P.pos.y <= gnd) { P.pos.y = gnd; P.vy = 0; P.onGround = true; } else P.onGround = false;
@@ -5486,9 +5563,9 @@ const RAID = {
           // 새 시설: 초소 4곳, 감시탑, 정비 창고, 통신 중계소, 연료 저장소, 중간 벙커
           [-17.3, 517.3, 'med'], [17.3, 277.8, 'tech'], [17.3, -121.2, 'med'], [17.3, -502.2, 'misc'], [-19.2, 24.3, 'weapon', 3],
           [18.8, 103.3, 'weapon'], [12.5, 99.5, 'misc'], [16.3, -203.7, 'tech'], [18.5, -200.2, 'docs'], [19.7, -300.5, 'misc'], [11.5, -313, 'med'],
-          [-16.8, 186.6, 'med'], [-4, 177.6, 'misc'], [-16, 198.4, 'weapon'], [-4.5, 189.4, 'tech'], [-12.6, 201.3, 'docs'], [-5.2, 207.5, 'tech']],
-    // 중간 벙커 경비병 (정예)
-    guards:[['grunt', -11, 182, 'elite'], ['grunt', -7, 195, 'elite'], ['grunt', 3.2, 187, 'elite'], ['brute', -9, 205, 'elite']],
+          [-38.4, 186.6, 'med'], [-25.6, 177.6, 'misc'], [-37.6, 198.4, 'weapon'], [-26.1, 189.4, 'tech'], [-34.2, 201.3, 'docs'], [-26.8, 207.5, 'tech']],
+    // 중간 벙커 경비병 (정예): 안에 3명, 굴 입구 앞에 1명
+    guards:[['grunt', -32.6, 182, 'elite'], ['grunt', -28.6, 195, 'elite'], ['grunt', -18.4, 187, 'elite'], ['brute', -30.6, 205, 'elite']],
     // 탈출 지점: 출발 위치에서 250m 이상 떨어진 곳 + 가운데 거점 안의 공용 탈출구
     ext:[{ id:'e1', name:'1번 배수로', x:CX(-11, 50), z:CZ(50) }, { id:'e2', name:'2번 정비 통로', x:CX(-11, -145), z:CZ(-145) }, { id:'e3', name:'협곡 끝 출구', x:CX(0, -292), z:CZ(-292) },
          { id:'e4', name:'남쪽 고지대 승강기', x:-12, z:CZ(295), y:3.2 }, { id:'c', name:'중앙 거점 환기구', x:15, z:CZ(-20) + 4, shared:true }],
@@ -6670,7 +6747,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.24.4';
+const GAME_VER = 'v1.2.25';
 // ---------- 실행 기록 (일반 모드) ----------
 // 게임을 켤 때와 창을 닫을 때 한 번씩만 서버에 알림 (계속 연결하지 않음). 협동전 접속은 서버 연결로 따로 기록됨
 // 출격하려면 닉네임이 필요하므로 대부분 닉네임으로 남음. 닉네임을 정하지 않고 닫으면 '익명의 유저'로 종료만 남음. 깃허브 페이지에서 실행할 때만 보냄
