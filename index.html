@@ -3572,11 +3572,11 @@ const _mh1 = new THREE.Vector3(), _mh2 = new THREE.Vector3(), _mh3 = new THREE.V
 // 회복 주사기 1인칭: 오른손에 쥔 자동 주사기를 화면 아래(허벅지)로 내리꽂고 누름 단추를 누름
 const injVm = new THREE.Group(); injVm.visible = false; wCam.add(injVm);
 const INJ = (() => {
-  const body = std('#d6c23a', { roughness:0.5 }), label = std('#2a2d33', { roughness:0.6 }), tip = std('#ff6a2a', { roughness:0.5 }), grey = std('#9aa1a8', { metalness:0.6, roughness:0.35 }), glove = std('#1e2023', { roughness:0.75 }), sleeve = std('#3d4433', { roughness:0.9 });
+  const body = std('#eef0ec', { roughness:0.45, metalness:0.05 }), label = std('#2fa35c', { roughness:0.5 }), tip = std('#1f7a45', { roughness:0.5 }), grey = std('#3fbf6e', { roughness:0.4 }), needle = std('#b8bec4', { metalness:0.7, roughness:0.3 }), glove = std('#1e2023', { roughness:0.75 }), sleeve = std('#3d4433', { roughness:0.9 });
   const pen = new THREE.Group(); injVm.add(pen);                                      // 바늘 쪽이 -y
   const C = (r, len, mat, y) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 16), mat); m.position.y = y; pen.add(m); return m; };
   C(0.017, 0.15, body, 0); C(0.0175, 0.035, label, 0.02); C(0.018, 0.03, tip, -0.09);
-  const btn = C(0.011, 0.025, grey, 0.088); C(0.0025, 0.03, grey, -0.118);
+  const btn = C(0.011, 0.025, grey, 0.088); C(0.0025, 0.03, needle, -0.118);
   const hand = new THREE.Group(); pen.add(hand);
   const B = (sc, p, r) => { const m = new THREE.Mesh(BOX, glove); m.scale.set(...sc); m.position.set(...p); if (r) m.rotation.set(...r); hand.add(m); return m; };
   B([0.05, 0.075, 0.05], [0.028, 0.0, 0.0]);                                            // 손바닥 (주사기를 감싸 쥠)
@@ -5909,9 +5909,9 @@ function itemIcon(id) {
   else if (k === 'bag') { R(16, 16, 32, 38, id === 'bag_l' ? '#5a6b3a' : '#4a5a6a'); R(20, 30, 24, 12, 'rgba(0,0,0,.25)'); R(24, 10, 16, 8, '#2b3035'); }
   else if (k === 'key') { R(10, 18, 44, 28, '#d8dde0'); R(16, 26, 12, 10, '#e0a030'); R(32, 26, 16, 3, '#5a646a'); R(32, 33, 12, 3, '#5a646a'); }
   else if (k === 'med') {
-    if (it.inject) {   // 자동 주사기: 노란 몸통, 주황 바늘 쪽 마개, 회색 누름 단추
+    if (it.inject) {   // 자동 주사기: 흰 몸통, 초록 띠와 바늘 쪽 마개, 초록 누름 단추
       g.save(); g.translate(32, 30); g.rotate(-0.75);
-      R(-6, -22, 12, 34, '#d6c23a'); R(-6, -6, 12, 7, '#2a2d33'); R(-5, 12, 10, 8, '#ff6a2a'); R(-3, -28, 6, 6, '#9aa1a8'); g.restore();
+      R(-6, -22, 12, 34, '#eef0ec'); R(-6, -6, 12, 7, '#2fa35c'); R(-5, 12, 10, 8, '#1f7a45'); R(-3, -28, 6, 6, '#3fbf6e'); g.restore();
     } else { R(14, 18, 36, 30, '#eef2f4'); R(28, 22, 8, 22, '#d8323a'); R(21, 29, 22, 8, '#d8323a'); }
     if (it.rem) { R(14, 52, 36, 5, '#3a3f44'); R(14, 52, Math.max(2, 36 * it.rem / it.cap), 5, '#4dd27a'); }
   }
@@ -6665,7 +6665,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.24';
+const GAME_VER = 'v1.2.24.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -6776,7 +6776,8 @@ function makeMate(id) {
   const bandW = std('#ece8dc', { roughness:0.95 });
   const bandL = dpart(armL, BOX, bandW, [0.15, 0.16, 0.15], [0, -0.42, 0]); bandL.visible = false;
   const rollR = dpart(armR, SPH, bandW, [0.07, 0.07, 0.07], [0, -0.64, -0.03]); rollR.visible = false;
-  const penR = dpart(armR, BOX, std('#d6c23a', { roughness:0.5 }), [0.05, 0.2, 0.05], [0, -0.68, -0.02]); penR.visible = false;   // 회복 주사기
+  const penR = dpart(armR, BOX, std('#eef0ec', { roughness:0.45 }), [0.05, 0.2, 0.05], [0, -0.68, -0.02]); penR.visible = false;   // 회복 주사기 (흰 몸통)
+  dpart(penR, BOX, std('#2fa35c', { roughness:0.5 }), [1.06, 0.25, 1.06], [0, 0.05, 0]);   // 초록 띠
   const mt = { id, g, body, tag, party, lz, ld, beam, hips, thighL, thighR, shinL, shinR, torso, neck, armL, armR, gun, bandL, rollR, penR, injT:-1,
     ph:0, mv:0, fs:0, ss:0, kick:0, throwT:0, lx:0, lz0:0, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
   g.userData.mate = mt; g.visible = false;
