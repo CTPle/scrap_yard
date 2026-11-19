@@ -5517,7 +5517,9 @@ const AMMO_TYPES = {
   he:{ name:'고폭탄', cost:20000, desc:'보스와 기계형 적에게 추가 피해' }
 };
 const deployCost = () => ARMOR_TIERS[HL.armor || 0].cost;
-let STASH = { credits:4000, items:{ s_reddot:1, medkit:2 }, guns:[{ uid:1, id:'w2', up:{ dmg:0, rec:0, rel:0, mag:0 } }], nextUid:2 };
+// 처음 시작할 때의 창고: 크레딧 14,000, 소총 2정, 저격총 1정, 레드닷, 홀로그램, 저격 조준경, 치료 키트 3개, 회복 주사기 1개
+const NEW_GUN = (uid, id) => ({ uid, id, up:{ dmg:0, rec:0, rel:0, mag:0 } });
+let STASH = { credits:14000, items:{ s_reddot:1, s_holo:1, s_sniper:1, medkit:3, medkit2:1 }, guns:[NEW_GUN(1, 'w2'), NEW_GUN(2, 'w2'), NEW_GUN(3, 'w5')], nextUid:4 };
 try { const v = JSON.parse(localStorage.getItem('scrapyard-stash') || 'null'); if (v && v.items) STASH = v; } catch (_) {}
 // 이전 저장 형식(총기 개수) 변환
 if (!STASH.guns) { STASH.guns = []; STASH.nextUid = 1; }
@@ -6668,7 +6670,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.24.3';
+const GAME_VER = 'v1.2.24.4';
 // ---------- 실행 기록 (일반 모드) ----------
 // 게임을 켤 때와 창을 닫을 때 한 번씩만 서버에 알림 (계속 연결하지 않음). 협동전 접속은 서버 연결로 따로 기록됨
 // 출격하려면 닉네임이 필요하므로 대부분 닉네임으로 남음. 닉네임을 정하지 않고 닫으면 '익명의 유저'로 종료만 남음. 깃허브 페이지에서 실행할 때만 보냄
