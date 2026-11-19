@@ -5259,17 +5259,18 @@ const ITEMS = {
 const SHOP = ['ammo_ap', 'ammo_he', 'repkit3', 'frag', 'keycard', 'medkit', 'bag_t', 'bag_l', 's_reddot', 's_holo', 'light', 'laser', 'combo', 's_mid', 'w6', 'w1', 'w2', 's_vari', 'w5', 's_sniper', 'w3', 'w4'];
 // 전리품 표: [아이템, 가중치]. 고가 품목은 가중치를 낮추고, 고급 표에도 저가 품목을 섞어 고가 품목이 덜 나오게 함
 const LOOT = {
-  weapon:[['repkit2', 1], ['repkit3', 0.25], ['frag', 2.5], ['w2', 3], ['w1', 3], ['w6', 3], ['w5', 1], ['w3', 0.6], ['w4', 0.02], ['ammo', 6], ['s_reddot', 3], ['s_holo', 2], ['s_mid', 1.5], ['laser', 2], ['light', 1.5], ['plate', 3]],
-  med:[['repkit1', 2], ['repkit2', 1], ['medkit', 8], ['plate', 3], ['v_sample', 1]],
+  // 방탄판은 필드에서 나오지 않음, 방어구 수리키트는 아주 낮은 확률
+  weapon:[['repkit2', 0.1], ['repkit3', 0.02], ['frag', 2.5], ['w2', 3], ['w1', 3], ['w6', 3], ['w5', 1], ['w3', 0.6], ['w4', 0.02], ['ammo', 6], ['s_reddot', 3], ['s_holo', 2], ['s_mid', 1.5], ['laser', 2], ['light', 1.5]],
+  med:[['repkit1', 0.2], ['repkit2', 0.1], ['medkit', 8], ['v_sample', 1]],
   tech:[['keycard', 0.03], ['v_battery', 4], ['v_chip', 3], ['v_drive', 0.8], ['s_vari', 0.8], ['s_sniper', 0.4], ['laser', 2], ['light', 1.5], ['combo', 0.4], ['v_tool', 3]],
   bio:[['v_sample', 5], ['v_serum', 3], ['medkit', 2]],
   docs:[['keycard', 0.03], ['v_docs', 6], ['v_chip', 2], ['v_drive', 0.4]],
-  misc:[['repkit1', 1.5], ['repkit2', 0.6], ['frag', 1.5], ['keycard', 0.02], ['v_tool', 4], ['ammo', 4], ['medkit', 3], ['plate', 3], ['s_reddot', 1], ['laser', 1], ['light', 1], ['v_battery', 2], ['v_docs', 1]],
-  drop:[['repkit1', 1], ['frag', 1.2], ['ammo', 5], ['medkit', 3], ['v_tool', 3], ['plate', 2], ['v_battery', 1.5], ['s_reddot', 0.6], ['keycard', 0.01]],
-  cmdr:[['v_core', 2.5], ['v_plan', 2.2], ['v_gold', 2.2], ['w4', 0.04], ['w3', 0.8], ['s_sniper', 1.2], ['bag_l', 0.6], ['v_drive', 1.5], ['v_chip', 3], ['v_battery', 3], ['medkit', 2.5], ['plate', 2], ['ammo', 2]],
-  tier3:[['v_core', 2.5], ['v_plan', 2], ['v_cmd', 0.6], ['v_gold', 1.6], ['w4', 0.06], ['s_sniper', 1], ['bag_l', 0.7], ['keycard', 0.4], ['v_jcore', 0.15], ['v_drive', 2.5], ['v_chip', 2.5], ['medkit', 2], ['plate', 2], ['repkit2', 1]],
-  bossbox:[['v_gold', 2.5], ['v_core', 1.4], ['v_plan', 1.6], ['v_drive', 3], ['w5', 1.2], ['w4', 0.03], ['w3', 0.6], ['s_sniper', 1], ['s_vari', 1.5], ['bag_t', 0.8], ['keycard', 0.35], ['v_chip', 3], ['v_battery', 2.5], ['medkit', 2], ['plate', 2]],
-  escort:[['medkit', 3], ['plate', 3], ['ammo', 2], ['s_mid', 1.5], ['s_vari', 0.8], ['laser', 1.5], ['combo', 0.4], ['v_chip', 2.5], ['v_drive', 1.2], ['v_serum', 1.5], ['v_gold', 0.3], ['w2', 0.8], ['w6', 0.8], ['w5', 0.25]],
+  misc:[['repkit1', 0.15], ['repkit2', 0.06], ['frag', 1.5], ['keycard', 0.02], ['v_tool', 4], ['ammo', 4], ['medkit', 3], ['s_reddot', 1], ['laser', 1], ['light', 1], ['v_battery', 2], ['v_docs', 1]],
+  drop:[['repkit1', 0.1], ['frag', 1.2], ['ammo', 5], ['medkit', 3], ['v_tool', 3], ['v_battery', 1.5], ['s_reddot', 0.6], ['keycard', 0.01]],
+  cmdr:[['v_core', 2.5], ['v_plan', 2.2], ['v_gold', 2.2], ['w4', 0.04], ['w3', 0.8], ['s_sniper', 1.2], ['bag_l', 0.6], ['v_drive', 1.5], ['v_chip', 3], ['v_battery', 3], ['medkit', 2.5], ['ammo', 2]],
+  tier3:[['v_core', 2.5], ['v_plan', 2], ['v_cmd', 0.6], ['v_gold', 1.6], ['w4', 0.06], ['s_sniper', 1], ['bag_l', 0.7], ['keycard', 0.4], ['v_jcore', 0.15], ['v_drive', 2.5], ['v_chip', 2.5], ['medkit', 2], ['repkit2', 0.1]],
+  bossbox:[['v_gold', 2.5], ['v_core', 1.4], ['v_plan', 1.6], ['v_drive', 3], ['w5', 1.2], ['w4', 0.03], ['w3', 0.6], ['s_sniper', 1], ['s_vari', 1.5], ['bag_t', 0.8], ['keycard', 0.35], ['v_chip', 3], ['v_battery', 2.5], ['medkit', 2]],
+  escort:[['medkit', 3], ['ammo', 2], ['s_mid', 1.5], ['s_vari', 0.8], ['laser', 1.5], ['combo', 0.4], ['v_chip', 2.5], ['v_drive', 1.2], ['v_serum', 1.5], ['v_gold', 0.3], ['w2', 0.8], ['w6', 0.8], ['w5', 0.25]],
   vault:[['v_gold', 2.5], ['v_core', 1.3], ['v_plan', 1.6], ['v_drive', 3], ['v_serum', 3], ['w4', 0.03], ['w5', 0.7], ['s_sniper', 0.8], ['s_vari', 1.5], ['v_chip', 2.5], ['v_sample', 2], ['medkit', 1.5]]
 };
 // 무작위 개수: lo ~ hi 사이 정수
@@ -6479,7 +6480,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.22';
+const GAME_VER = 'v1.2.22.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
