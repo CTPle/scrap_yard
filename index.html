@@ -6229,7 +6229,7 @@ function beginRaid() {
   SND.init();
   const dc = deployCost();
   if (STASH.credits < dc) { saveMsg(''); $('deployMsg').textContent = `출격 비용 ${dc.toLocaleString()} 크레딧이 부족합니다`; return; }
-  STASH.credits -= dc;
+  STASH.credits -= dc; SESS.raids++;
   mode = 'raid';
   resetWeaponStats(); for (let wi = 0; wi < WEAPONS.length; wi++) raidWeaponBase(wi);
   const pickGun = uid => { const gi = STASH.guns.findIndex(x => x.uid === uid); return gi >= 0 ? STASH.guns.splice(gi, 1)[0] : null; };
@@ -6665,7 +6665,20 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.24.1';
+const GAME_VER = 'v1.2.24.2';
+// ---------- 실행 기록 (일반 모드) ----------
+// 게임을 켤 때와 창을 닫을 때 한 번씩만 서버에 알림 (계속 연결하지 않음). 협동전 접속은 서버 연결로 따로 기록됨
+// 닉네임이 없으면 이 기기의 무작위 번호로 기록. 깃허브 페이지에서 실행할 때만 보냄
+const SESS = { t0:Date.now(), raids:0, ended:false, dev:(() => {
+  try { let d = localStorage.getItem('scrapyard-dev'); if (!/^[0-9a-f]{6}$/.test(d || '')) { d = Array.from({ length:6 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''); localStorage.setItem('scrapyard-dev', d); } return d; } catch (_) { return ''; }
+})() };
+function hit(ev, extra = {}) {
+  if (!/(^|\.)github\.io$/.test(location.hostname)) return;
+  const url = NET_URL.replace(/^ws/, 'http') + '/hit?' + new URLSearchParams(Object.assign({ ev, nick:STASH.nick || '', dev:SESS.dev, ver:GAME_VER }, extra));
+  try { if (ev === 'end' && navigator.sendBeacon) navigator.sendBeacon(url); else fetch(url, { mode:'no-cors', keepalive:true }).catch(() => {}); } catch (_) {}
+}
+hit('start');
+addEventListener('pagehide', () => { if (SESS.ended) return; SESS.ended = true; hit('end', { min:Math.round((Date.now() - SESS.t0) / 60000), raids:SESS.raids }); });
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
