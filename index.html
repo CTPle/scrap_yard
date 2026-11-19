@@ -3382,7 +3382,7 @@ function buildScopeMesh(g, key, y, z) {
     const hood = new THREE.ExtrudeGeometry(sh, { depth:0.085, bevelEnabled:true, bevelThickness:0.002, bevelSize:0.0015, bevelSegments:2, curveSegments:6 });
     hood.translate(0, 0, -0.0425); const hm = new THREE.Mesh(hood, optMat.body); hm.position.set(0, cy, z - 0.012); g.add(hm);
     part(g, BOX, optMat.dark, [0.1, 0.006, 0.006], [0, cy + hh - 0.004, z - 0.056]);                                         // 앞 덮개 테
-    part(g, BOX, new THREE.MeshBasicMaterial({ color:'#cfe8d8', transparent:true, opacity:0.09, depthWrite:false }), [iw * 2, ih * 2 - 0.008, 0.002], [0, cy + 0.004, z + 0.024]);   // 창 유리
+    part(g, BOX, new THREE.MeshBasicMaterial({ color:'#cfe8d8', transparent:true, opacity:0.09, depthWrite:false }), [iw * 2, ih * 2 - 0.008, 0.002], [0, cy + 0.004, z + 0.024]).name = 'holoGlass';   // 창 유리 (조준점 크기를 이 창에 맞춤)
     for (const [bx, c] of [[-0.014, '#2e3238'], [0, '#2e3238'], [0.014, '#3a2e2a']]) part(g, BOX, std(c, { metalness:0.3, roughness:0.6 }), [0.01, 0.01, 0.006], [bx, y + 0.024, z + 0.067]);   // 뒤 버튼
     part(g, BOX, optMat.steel, [0.006, 0.012, 0.04], [0.03, y + 0.008, z + 0.02]);                                            // 고정 레버
   } else {
@@ -4767,6 +4767,16 @@ function updatePlayer(dt) {
   const sight = aimT > 0.6 && (cw.view === 'dot' || cw.view === 'holo');
   $('dot').style.display = sight && cw.view === 'dot' ? 'block' : 'none';
   $('holo').style.display = sight && cw.view === 'holo' ? 'block' : 'none';
+  // 홀로그램 조준점이 창 테두리 밖으로 나가지 않게, 화면에 보이는 창 크기의 60% 로 맞춤
+  if (sight && cw.view === 'holo') {
+    const gl = models[weapon].getObjectByName('holoGlass');
+    if (gl) {
+      vm.updateMatrixWorld(true);
+      const a = gl.localToWorld(_hv1.set(-0.5, 0, 0)).project(wCam), b = gl.localToWorld(_hv2.set(0.5, 0, 0)).project(wCam);
+      const px = Math.round(clamp(Math.abs(b.x - a.x) / 2 * canvas.clientWidth * 0.6, 14, 220));
+      setStyle('holo', 'width', px + 'px'); setStyle('holo', 'height', px + 'px'); setStyle('holo', 'margin', (-px / 2) + 'px 0 0 ' + (-px / 2) + 'px');
+    }
+  }
   $('cross').style.opacity = 0;
   // 무기 흔들림
   const bx = moving ? Math.cos(P.bob * 0.5) * 0.012 : 0, by = moving ? Math.abs(Math.sin(P.bob * 0.5)) * 0.012 : 0;
@@ -4960,7 +4970,7 @@ function say(t, short) {
 const hudCache = {};
 function setTxt(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
 // 같은 값이면 화면 요소 스타일을 다시 쓰지 않음 (매 프레임 쓰면 브라우저가 화면 배치를 다시 계산함)
-const _styleCache = {};
+const _styleCache = {}, _hv1 = new THREE.Vector3(), _hv2 = new THREE.Vector3();
 function setStyle(id, prop, v) { const k = id + '.' + prop; if (_styleCache[k] === v) return; _styleCache[k] = v; $(id).style[prop] = v; }
 function updateHud(dt) {
   setTxt('hpTxt', String(Math.ceil(P.hp))); setTxt('arTxt', String(Math.ceil(P.ar)));
@@ -6248,7 +6258,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.19';
+const GAME_VER = 'v1.2.19.1';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
