@@ -352,6 +352,7 @@ body.is-raid .waveonly{ display:none; }
 .roombox .err{ color:#ff7a6a; font-size:13px; margin:8px 0 0; }
 .nickrow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:-0.6em 0 1em; font-size:14px; color:var(--dim); }
 .nickrow b{ color:var(--ink); font-size:16px; }
+.nickrow.need input{ border-color:var(--amber); box-shadow:0 0 0 1px var(--amber); }
 .nickrow input{ font:inherit; font-size:14px; padding:5px 8px; width:12em; background:rgba(0,0,0,.35); color:var(--ink); border:1px solid rgba(241,233,216,.35); }
 .nickrow .err{ color:#ff7a6a; }
 .quitwarn{ color:var(--amber); font-size:13px; margin:12px 0 0; }
@@ -6645,10 +6646,12 @@ function setNick(v) {
     else if (nickWait() > 0) return '아직 바꿀 수 없습니다';
   } else STASH.nickFree = 1;
   STASH.nick = v; STASH.nickAt = Date.now(); saveStash();
+  if (!SESS.started) { SESS.started = true; hit('start'); }
   return '';
 }
 function renderNick() {
   const el = $('hNick'), w = nickWait();
+  el.classList.toggle('need', !STASH.nick);
   if (!STASH.nick || nickEdit) {
     const note = !STASH.nick ? '처음 정한 뒤 한 번은 바로 바꿀 수 있고, 그 뒤로는 30일에 한 번 바꿀 수 있습니다' : (STASH.nickFree || 0) > 0 ? '이번 변경은 대기 없이 가능 (다음부터 30일에 한 번)' : '바꾸면 30일 동안 다시 바꿀 수 없습니다';
     el.innerHTML = `<span>닉네임</span><input id="nickIn" maxlength="12" placeholder="2~12자" value="${STASH.nick || ''}"><button class="opt" id="nickOk">확인</button>${STASH.nick ? '<button class="opt" id="nickNo">취소</button>' : ''}<span class="hint">${note}</span>${nickErr ? `<span class="err">${nickErr}</span>` : ''}`;
@@ -6665,10 +6668,10 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.24.2';
+const GAME_VER = 'v1.2.24.3';
 // ---------- 실행 기록 (일반 모드) ----------
 // 게임을 켤 때와 창을 닫을 때 한 번씩만 서버에 알림 (계속 연결하지 않음). 협동전 접속은 서버 연결로 따로 기록됨
-// 닉네임이 없으면 서버에 '익명의 유저'로 기록됨. 깃허브 페이지에서 실행할 때만 보냄
+// 출격하려면 닉네임이 필요하므로 대부분 닉네임으로 남음. 닉네임을 정하지 않고 닫으면 '익명의 유저'로 종료만 남음. 깃허브 페이지에서 실행할 때만 보냄
 const SESS = { t0:Date.now(), raids:0, ended:false, dev:(() => {
   try { let d = localStorage.getItem('scrapyard-dev'); if (!/^[0-9a-f]{6}$/.test(d || '')) { d = Array.from({ length:6 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''); localStorage.setItem('scrapyard-dev', d); } return d; } catch (_) { return ''; }
 })() };
@@ -6677,7 +6680,8 @@ function hit(ev, extra = {}) {
   const url = NET_URL.replace(/^ws/, 'http') + '/hit?' + new URLSearchParams(Object.assign({ ev, nick:STASH.nick || '', dev:SESS.dev, ver:GAME_VER }, extra));
   try { if (ev === 'end' && navigator.sendBeacon) navigator.sendBeacon(url); else fetch(url, { mode:'no-cors', keepalive:true }).catch(() => {}); } catch (_) {}
 }
-hit('start');
+// 닉네임이 있으면 바로 '실행'을 보내고, 없으면 처음 닉네임을 정할 때 보냄
+SESS.started = !!STASH.nick; if (SESS.started) hit('start');
 addEventListener('pagehide', () => { if (SESS.ended) return; SESS.ended = true; hit('end', { min:Math.round((Date.now() - SESS.t0) / 60000), raids:SESS.raids }); });
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
@@ -7270,7 +7274,7 @@ function renderHideout() {
     </div>`;
   const dc = deployCost();
   $('deployBtn').textContent = dc ? `출격 (비용 ${dc.toLocaleString()})` : '출격';
-  $('deployMsg').textContent = STASH.credits < dc ? '크레딧이 부족해 출격할 수 없습니다' : '';
+  $('deployMsg').textContent = !STASH.nick ? '출격하려면 위에서 닉네임을 먼저 정해 주십시오' : STASH.credits < dc ? '크레딧이 부족해 출격할 수 없습니다' : '';
   // 총기 강화 (선택한 주무기)
   $('hUpg').innerHTML = gun ? Object.keys(UPG).map(k => {
     const l = gun.up[k], c = upgCost(gun, k), dots = '●'.repeat(l) + '○'.repeat(upgCap() - l);
@@ -7370,6 +7374,8 @@ function saveHL() { try { localStorage.setItem('scrapyard-hl', JSON.stringify(HL
 $('hideBtn').addEventListener('click', () => { SND.init(); openHideout(); });
 $('hideBack').addEventListener('click', () => { if (NET.room) netSend({ t:'leave' }); buildLevel(mapChoice); $('hideOv').hidden = true; $('startOv').hidden = false; mode = 'wave'; shopCat = null; });
 $('deployBtn').addEventListener('click', () => {
+  // 일반 모드, 협동전 모두 닉네임을 정해야 출격 가능
+  if (!STASH.nick) { $('deployMsg').textContent = '출격하려면 위에서 닉네임을 먼저 정해 주십시오'; const n = $('nickIn'); if (n) n.focus(); return; }
   if (HL.coop) {
     // 협동전: 방장이 누르면 방 전체가 출격 (서버가 시작 신호를 보냄)
     if (!NET.room) { $('deployMsg').textContent = '협동전은 파티를 꾸리거나 참가한 뒤 출격할 수 있습니다'; return; }
