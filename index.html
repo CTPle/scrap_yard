@@ -802,6 +802,8 @@ const SND = (() => {
     tear:    (v = 1) => { for (let k = 0; k < 6; k++) nz(0.03 + Math.random() * 0.02, (0.1 + Math.random() * 0.06) * v, 'highpass', 2600 + Math.random() * 1800, k * 0.035); nz(0.12, 0.05 * v, 'bandpass', 1200, 0.2); },
     // 붕대 감기: 천이 팔에 쓸리며 당겨지는 소리 (스윽 - 슥) 두 번
     wrap:    (v = 1) => { for (let k = 0; k < 2; k++) { const d = k * 0.3 + Math.random() * 0.04; nz(0.2, 0.08 * v, 'bandpass', 1900 + Math.random() * 700, d); nz(0.13, 0.05 * v, 'bandpass', 900 + Math.random() * 300, d + 0.05); nz(0.05, 0.035 * v, 'highpass', 4200, d + 0.15); } },
+    // 회복 주사: 마개 빠지는 딸깍, 스프링 철컥, 약이 들어가는 짧은 쉭 소리
+    inject:  (v = 1) => { clank(2900, 0.12 * v, 0, 0.02); click(0.28 * v, 0.03, 3000, 0.015); clank(1500, 0.1 * v, 0.05, 0.04); nz(0.35, 0.05 * v, 'highpass', 5200, 0.08); },
     pickup:  () => { nz(0.08, 0.25, 'bandpass', 1800); clank(1100, 0.1, 0.05, 0.05, 4); nz(0.06, 0.2, 'bandpass', 2400, 0.09); },
     eshot:   (v) => shot('enemy', v * 0.85, Math.max(0, Math.min(0.9, 1 - v))) || gun(GUN.enemy, v, Math.max(0, Math.min(0.9, 1 - v))), // 적 총성: 멀수록 작고 둔탁하게, 울림 비중은 커짐
     wave:    () => { tone('sine', 440, null, 0.22, 0.16); tone('sine', 660, null, 0.4, 0.14, 0.18); },
@@ -3548,7 +3550,7 @@ const MED = (() => {
   return { arm, wrap, marks, roll, strip, rh, rFore, rSleeve };
 })();
 function updateMedVm(bobY, bobX) {
-  medVm.visible = healK > 0.01;
+  medVm.visible = healK > 0.01 && healMode === 'wrap';
   if (!medVm.visible) return;
   const el = healEl, p = clamp((el - HEAL_DOWN) / (healPlan * HEAL_TICK), 0, 1);
   medVm.position.set(bobX, -0.32 * (1 - healK) + bobY, 0);
@@ -3567,6 +3569,50 @@ function updateMedVm(bobY, bobX) {
   seg(MED.rFore, hp, el2, 0.12, 0.62); seg(MED.rSleeve, hp, el2, 0.6, 1.4);
 }
 const _mh1 = new THREE.Vector3(), _mh2 = new THREE.Vector3(), _mh3 = new THREE.Vector3(), _mhY = new THREE.Vector3(0, 1, 0);
+// 회복 주사기 1인칭: 오른손에 쥔 자동 주사기를 화면 아래(허벅지)로 내리꽂고 누름 단추를 누름
+const injVm = new THREE.Group(); injVm.visible = false; wCam.add(injVm);
+const INJ = (() => {
+  const body = std('#d6c23a', { roughness:0.5 }), label = std('#2a2d33', { roughness:0.6 }), tip = std('#ff6a2a', { roughness:0.5 }), grey = std('#9aa1a8', { metalness:0.6, roughness:0.35 }), glove = std('#1e2023', { roughness:0.75 }), sleeve = std('#3d4433', { roughness:0.9 });
+  const pen = new THREE.Group(); injVm.add(pen);                                      // 바늘 쪽이 -y
+  const C = (r, len, mat, y) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 16), mat); m.position.y = y; pen.add(m); return m; };
+  C(0.017, 0.15, body, 0); C(0.0175, 0.035, label, 0.02); C(0.018, 0.03, tip, -0.09);
+  const btn = C(0.011, 0.025, grey, 0.088); C(0.0025, 0.03, grey, -0.118);
+  const hand = new THREE.Group(); pen.add(hand);
+  const B = (sc, p, r) => { const m = new THREE.Mesh(BOX, glove); m.scale.set(...sc); m.position.set(...p); if (r) m.rotation.set(...r); hand.add(m); return m; };
+  B([0.05, 0.075, 0.05], [0.028, 0.0, 0.0]);                                            // 손바닥 (주사기를 감싸 쥠)
+  for (let k = 0; k < 4; k++) B([0.035, 0.016, 0.018], [0.006, 0.03 - k * 0.019, -0.026]);   // 손가락
+  const thumb = B([0.016, 0.03, 0.016], [0.0, 0.112, 0.0]);                             // 엄지가 누름 단추 위
+  const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.046, 1, 14), std('#4a5240', { roughness:0.9 })), slv = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.054, 1, 14), sleeve);
+  injVm.add(fore, slv);
+  // 허벅지 (화면 아래): 주사기를 꽂는 자리
+  const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.6, 20), std('#4b5139', { roughness:0.95 }));
+  thigh.rotation.set(Math.PI / 2 - 0.35, 0, 0.15); thigh.position.set(-0.04, -0.43, -0.5); injVm.add(thigh);
+  const pocket = new THREE.Mesh(BOX, std('#3f4530', { roughness:0.95 })); pocket.scale.set(0.12, 0.02, 0.14); pocket.position.set(-0.1, -0.34, -0.5); pocket.rotation.set(-0.35, 0, 0.15); injVm.add(pocket);
+  return { pen, btn, thumb, fore, slv, thigh };
+})();
+const _ij1 = new THREE.Vector3(), _ij2 = new THREE.Vector3(), _ij3 = new THREE.Vector3();
+function updateInjVm() {
+  injVm.visible = !!healing && healMode === 'inject';
+  if (!injVm.visible) return;
+  // 0~0.3 들어 올림, 0.3~0.45 내리꽂음, 꽂은 채 회복, 끝나면(무기 올리는 0.4초) 뽑아서 내림
+  const t = healUp >= 0 ? 0.8 + (1 - healUp / HEAL_DOWN) * 0.4 : Math.min(healEl, 0.8), ease = k => k * k * (3 - 2 * k);
+  const start = _ij1.set(0.3, -0.55, -0.4), hold = _ij2.set(0.07, -0.14, -0.44), stab = _ij3.set(0.02, -0.25, -0.46);
+  const P0 = new THREE.Vector3();
+  if (t < 0.3) P0.lerpVectors(start, hold, ease(t / 0.3));
+  else if (t < 0.45) P0.lerpVectors(hold, stab, Math.pow((t - 0.3) / 0.15, 2));       // 빠르게 내리꽂음
+  else if (t < 0.8 || healUp < 0) P0.copy(stab).add(new THREE.Vector3(rand(-1, 1) * 0.0015, rand(-1, 1) * 0.0015, 0));
+  else if (t < 1.0) P0.lerpVectors(stab, hold, ease((t - 0.8) / 0.2));
+  else P0.lerpVectors(hold, start, ease((t - 1.0) / 0.2));
+  INJ.pen.position.copy(P0); INJ.pen.rotation.set(-0.25, 0.3, 0.35);
+  // 누름 단추: 꽂은 뒤 0.5~0.65초에 눌림
+  const press = healUp >= 0 ? 1 : clamp((healEl - 0.5) / 0.15, 0, 1);
+  INJ.btn.position.y = 0.088 - press * 0.012; INJ.thumb.position.y = 0.112 - press * 0.012;
+  // 팔뚝: 손 -> 화면 오른쪽 아래
+  injVm.updateMatrixWorld(true);
+  const hp = injVm.worldToLocal(INJ.pen.localToWorld(_mh1.set(0.03, 0.02, 0))), elb = _mh2.set(0.32, -0.42, -0.25);
+  const seg = (m, a, b, k0, k1) => { const d = _mh3.subVectors(b, a), L = d.length(); m.position.copy(a).addScaledVector(d, (k0 + k1) / 2); m.scale.set(1, L * (k1 - k0), 1); m.quaternion.setFromUnitVectors(_mhY, d.normalize()); };
+  seg(INJ.fore, hp, elb, 0.05, 0.6); seg(INJ.slv, hp, elb, 0.58, 1.4);
+}
 
 // ---------- 게임 상태 ----------
 let state = 'title', lockMode = false;
@@ -3602,13 +3648,13 @@ let ammo, weapon, lastWeapon, fireCd, reloading, switchT, recoil, kick, dmgFlash
 // 체력이 다 차거나 키트가 비면 끝. 발사하거나 무기를 바꾸면 중단하고, 남은 양은 키트에 그대로 남아 가방으로 돌아감
 // 치료 중에는 조준, 재장전, 달리기를 못 하고 60% 속도로 걸음. 팀원에게도 붕대 감는 모습과 소리가 전해짐
 const HEAL_TICK = 0.7, HEAL_PER = 14, HEAL_DOWN = 0.4;
-let healing = 0, healKit = null, healRem = 0, healGiven = 0, healTickT = 0, healEl = 0, healUp = -1, healPlan = 1, healK = 0;
+let healInj = false, healing = 0, healKit = null, healRem = 0, healGiven = 0, healTickT = 0, healEl = 0, healUp = -1, healPlan = 1, healK = 0;
 function healTip() { $('reloadTip').textContent = `치료 중 ${Math.round(healRem)}/${ITEMS[healKit].cap}`; }
 // 남은 키트를 가방에 돌려주고 끝냄
 function healStop(msg, quiet) {
   if (!healing) return;
   if (raid && healRem > 0.5) raid.bag.push(medId(healKit, healRem));
-  healing = 0; healK = 0; healUp = -1; medVm.visible = false; $('reloadTip').style.opacity = 0; $('reloadTip').textContent = '재장전 중';
+  healing = 0; healK = 0; healUp = -1; medVm.visible = false; injVm.visible = false; $('reloadTip').style.opacity = 0; $('reloadTip').textContent = '재장전 중';
   if (!quiet) say(`${msg} (체력 +${Math.round(healGiven)}${healRem > 0.5 ? `, 키트 남은 양 ${Math.round(healRem)}` : ', 키트를 다 썼습니다'})`, 1);
 }
 function cancelHeal(quiet) {
@@ -3616,6 +3662,10 @@ function cancelHeal(quiet) {
   if (!quiet) switchT = 0.28;
   healStop('치료 중단', quiet);
 }
+// 회복 주사기(2단계)도 같은 흐름: 허벅지에 꽂고(0.45초) 꽂은 채로 0.7초마다 28 회복, 그동안 무기를 들 수 없음
+const STIM_PER = 28;
+let healMode = 'wrap';
+const medBusy = () => !!healing;
 function updateHeal(dt) {
   if (!healing) { healK = 0; return; }
   if (P.downed || mode !== 'raid' || !raid) { cancelHeal(true); return; }
@@ -3624,11 +3674,12 @@ function updateHeal(dt) {
     healUp -= dt;
     if (healUp <= 0) { SND.play('pickup'); healStop(healRem > 0.5 ? '치료 완료' : '치료 완료'); return; }
   } else if (healEl > HEAL_DOWN) {
+    if (healMode === 'inject' && !healInj && healEl >= 0.5) { healInj = true; SND.play('inject'); if (NET.inRaid) netSend({ t:'e', k:'inject' }); }
     healTickT -= dt;
     if (healTickT <= 0) {
       healTickT += HEAL_TICK;
-      const amt = Math.min(HEAL_PER * P.healMul, healRem, P.maxHp - P.hp);
-      if (amt > 0) { P.hp += amt; healGiven += amt; healRem -= amt; healTip(); SND.play('wrap'); if (NET.inRaid) netSend({ t:'e', k:'wrap' }); }
+      const amt = Math.min((healMode === 'inject' ? STIM_PER : HEAL_PER) * P.healMul, healRem, P.maxHp - P.hp);
+      if (amt > 0) { P.hp += amt; healGiven += amt; healRem -= amt; healTip(); if (healMode === 'wrap') { SND.play('wrap'); if (NET.inRaid) netSend({ t:'e', k:'wrap' }); } }
       if (healRem <= 0.5 || P.hp >= P.maxHp - 0.01) healUp = HEAL_DOWN;   // 다 차거나 키트가 비면 무기를 올림
     }
   }
@@ -3906,7 +3957,7 @@ function startReload() {
   if (P.downed) return;
   const w = WEAPONS[weapon], a = ammo[weapon];
   if (w.noReload || mode === 'wave') return;
-  if (reloading > 0 || switchT > 0 || healing > 0 || a.mag >= w.mag || a.res <= 0) return;
+  if (reloading > 0 || switchT > 0 || medBusy() || a.mag >= w.mag || a.res <= 0) return;
   reloading = w.reload; SND.play('reload', w.reload);
   $('reloadTip').style.opacity = 1;
 }
@@ -3914,7 +3965,7 @@ const ray = new THREE.Raycaster();
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), fwd = new THREE.Vector3();
 function fire() {
   const w = WEAPONS[weapon], a = ammo[weapon];
-  if (P.downed || reloading > 0 || switchT > 0 || fireCd > 0 || healing > 0) return;
+  if (P.downed || reloading > 0 || switchT > 0 || fireCd > 0 || medBusy()) return;
   if (a.mag <= 0) {
     if (firePressed) SND.play('empty');
     if (a.res > 0) startReload();
@@ -4061,7 +4112,7 @@ function explode(p, dmgIn, Rin, fromNet) {
 const FRAG_DMG = 320, FRAG_R = 5, FRAG_FUSE = 2;
 const fragMat = std('#4a5a32', { roughness:0.6 });
 function throwFrag() {
-  if (state !== 'play' || !raid || fragCd > 0 || P.downed || healing > 0) return;
+  if (state !== 'play' || !raid || fragCd > 0 || P.downed || medBusy()) return;
   const i = raid.bag.indexOf('frag');
   if (i < 0) { say('수류탄이 없습니다', 1); SND.play('empty'); return; }
   raid.bag.splice(i, 1); fragCd = 0.9;
@@ -5020,7 +5071,7 @@ function updatePlayer(dt) {
   // 모바일 달리기 버튼: 켜 두면 앞으로 가는 동안 달리고, 멈추거나 조준하면 꺼짐
   if (touchSprint && iz < -0.2) touchSprintRan = true;
   if (touchSprint && ((touchSprintRan && iz > -0.2) || aiming || P.downed)) { touchSprint = false; touchSprintRan = false; document.querySelectorAll('.tb[data-t="sprint"]').forEach(b => b.classList.remove('lit')); }
-  const sprint = (keys.ShiftLeft || keys.ShiftRight || touchSprint) && iz < 0 && !aiming && !P.downed && !(healing > 0);
+  const sprint = (keys.ShiftLeft || keys.ShiftRight || touchSprint) && iz < 0 && !aiming && !P.downed && !medBusy();
   P.sprinting = sprint;
   // 앉기: C 를 누르고 있는 동안만 앉음 (Ctrl+W 탭 닫기 사고를 막으려고 Ctrl 대신 C). 달리면 일어섬. 모바일은 버튼으로 켜고 끔
   if (sprint && prone) setProne(false);
@@ -5028,7 +5079,7 @@ function updatePlayer(dt) {
   else if (sprint && crouch) setCrouch(false);
   crouchT += ((crouch ? 1 : 0) - crouchT) * Math.min(1, dt * 10);
   proneT += ((prone ? 1 : 0) - proneT) * Math.min(1, dt * 6);
-  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (1 - proneT * 0.7) * (P.downed ? 0.35 : 1) * (healing > 0 ? 0.6 : 1); // 쓰러지면 기어감, 엎드리면 30% 속도, 치료 중 60%
+  const speed = (sprint ? 10.5 : aiming ? 4.2 : 7) * (P.spd || 1) * (1 - Math.abs(leanT) * 0.25) * (1 - crouchT * 0.5) * (1 - proneT * 0.7) * (P.downed ? 0.35 : 1) * (medBusy() ? 0.6 : 1); // 쓰러지면 기어감, 엎드리면 30% 속도, 치료, 주사 동작 중 60%
   const s = Math.sin(P.yaw), c = Math.cos(P.yaw);
   const vx = (ix * c + iz * s) * speed, vz = (-ix * s + iz * c) * speed;
   P.feet = P.pos.y - 1.7;
@@ -5097,7 +5148,7 @@ function updatePlayer(dt) {
   vm.position.set(VM_BASE.x * (1 - aimT) + bx * ab, VM_BASE.y + (adsY - VM_BASE.y) * aimT + by * ab - rl * 0.12 - sw * 0.3, VM_BASE.z + 0.06 * aimT + kick * 0.6);
   vm.rotation.set(kick * 1.2 * (1 - aimT * 0.7) + rl * 0.5, 0, rl * 0.35 - leanT * 0.12 * (1 - aimT));
   if (healK > 0) { vm.position.y -= healK * 0.42; vm.position.x += healK * 0.06; vm.rotation.x -= healK * 0.55; vm.rotation.z -= healK * 0.35; }
-  updateMedVm(by * ab, bx * ab);
+  updateMedVm(by * ab, bx * ab); updateInjVm();
   kick = Math.max(0, kick - dt * 0.9);
   recoil = Math.max(0, recoil - dt * 0.6);
 }
@@ -5113,7 +5164,7 @@ function updateWeapon(dt) {
   }
   const w = WEAPONS[weapon];
   updateHeal(dt);
-  if (healing > 0) { if (firePressed) cancelHeal(); }
+  if (medBusy()) { if (firePressed) cancelHeal(); }
   else if (mouseDown && (w.auto || firePressed)) fire();
   firePressed = false;
   if (w.charge) {
@@ -5324,7 +5375,7 @@ const ITEMS = new Proxy({
   light:{ kind:'laser', name:'전술 라이트', size:1, value:1500 },
   combo:{ kind:'laser', name:'레이저+라이트 복합기', size:1, value:4500 },
   medkit:{ kind:'med', cap:70, name:'치료 키트', short:'치료', size:1, value:600 },
-  medkit2:{ kind:'med', cap:210, name:'고급 치료 키트', short:'고급 치료', size:1, value:2400 },
+  medkit2:{ kind:'med', cap:210, inject:true, name:'회복 주사기', short:'주사기', size:1, value:2400 },
   frag:{ kind:'throw', name:'수류탄', size:1, value:1500 },
   ammo_ap:{ kind:'ammobox', ammo:'ap', name:'관통탄 탄창', size:1, value:1800 },
   ammo_he:{ kind:'ammobox', ammo:'he', name:'고폭탄 탄창', size:1, value:3000 },
@@ -5858,8 +5909,10 @@ function itemIcon(id) {
   else if (k === 'bag') { R(16, 16, 32, 38, id === 'bag_l' ? '#5a6b3a' : '#4a5a6a'); R(20, 30, 24, 12, 'rgba(0,0,0,.25)'); R(24, 10, 16, 8, '#2b3035'); }
   else if (k === 'key') { R(10, 18, 44, 28, '#d8dde0'); R(16, 26, 12, 10, '#e0a030'); R(32, 26, 16, 3, '#5a646a'); R(32, 33, 12, 3, '#5a646a'); }
   else if (k === 'med') {
-    R(14, 18, 36, 30, '#eef2f4'); R(28, 22, 8, 22, '#d8323a'); R(21, 29, 22, 8, '#d8323a');
-    if (it.cap > 70) R(14, 14, 36, 5, '#2f6fb0');
+    if (it.inject) {   // 자동 주사기: 노란 몸통, 주황 바늘 쪽 마개, 회색 누름 단추
+      g.save(); g.translate(32, 30); g.rotate(-0.75);
+      R(-6, -22, 12, 34, '#d6c23a'); R(-6, -6, 12, 7, '#2a2d33'); R(-5, 12, 10, 8, '#ff6a2a'); R(-3, -28, 6, 6, '#9aa1a8'); g.restore();
+    } else { R(14, 18, 36, 30, '#eef2f4'); R(28, 22, 8, 22, '#d8323a'); R(21, 29, 22, 8, '#d8323a'); }
     if (it.rem) { R(14, 52, 36, 5, '#3a3f44'); R(14, 52, Math.max(2, 36 * it.rem / it.cap), 5, '#4dd27a'); }
   }
   else if (k === 'ammo') { for (let i = 0; i < 4; i++) { R(14 + i * 10, 22, 7, 22, '#c9962f'); R(14 + i * 10, 18, 7, 6, '#8a6a3a'); } }
@@ -6013,7 +6066,7 @@ function nearBox() {
 }
 // 방어구 수리: 최대치의 30% 회복(수리 효율 훈련으로 증가), 사용 횟수가 남으면 한 단계 낮은 키트로 바뀜
 function useRepair(idx) {
-  if (state !== 'play' && state !== 'inv' || !raid || P.downed || healing > 0) return;
+  if (state !== 'play' && state !== 'inv' || !raid || P.downed || medBusy()) return;
   let i = idx;
   if (i === undefined) { for (const id of ['repkit1', 'repkit2', 'repkit3']) { i = raid.bag.indexOf(id); if (i >= 0) break; } }
   if (i === undefined || i < 0) { say('방어구 수리키트가 없습니다', 1); SND.play('empty'); return; }
@@ -6057,16 +6110,19 @@ function pickMedKit() {
   return fit.length ? fit[0] : kits.sort((a, b) => medRem(b) - medRem(a))[0];
 }
 function useMed(id) {
-  if (state !== 'play' || !raid || P.downed || healing || switchT > 0) return;
+  if (state !== 'play' || !raid || P.downed || medBusy() || switchT > 0) return;
   if (P.hp >= P.maxHp) { say('체력이 가득 차 있습니다', 1); return; }
   const kid = id && raid.bag.includes(id) ? id : pickMedKit();
   if (!kid) { say('치료 키트가 없습니다', 1); return; }
   raid.bag.splice(raid.bag.indexOf(kid), 1);
   reloading = 0; chargeT = 0; aiming = false; mouseDown = false; document.querySelectorAll('.tb[data-t="aim"]').forEach(b => b.classList.remove('lit'));
-  healing = 1; healKit = medBase(kid); healRem = medRem(kid); healGiven = 0; healEl = 0; healUp = -1; healTickT = HEAL_TICK;
+  healing = 1; healKit = medBase(kid); healRem = medRem(kid); healGiven = 0; healEl = 0; healUp = -1; healInj = false;
+  healMode = ITEMS[healKit].inject ? 'inject' : 'wrap';
+  healTickT = healMode === 'inject' ? 0.1 + HEAL_TICK : HEAL_TICK;                     // 주사는 꽂은 순간(0.5초)부터 0.7초마다
   healPlan = Math.max(1, Math.ceil(Math.min(healRem, P.maxHp - P.hp) / (HEAL_PER * P.healMul)));   // 붕대가 감기는 길이 계산용
   healTip(); $('reloadTip').style.opacity = 1;
-  SND.play('tear'); if (NET.inRaid) netSend({ t:'e', k:'tear' });
+  if (healMode === 'wrap') { SND.play('tear'); if (NET.inRaid) netSend({ t:'e', k:'tear' }); }
+  else { SND.play('swap'); if (NET.inRaid) netSend({ t:'e', k:'injstart' }); }
   say(`${ITEMS[healKit].name} 사용 중 (발사하거나 무기를 바꾸면 중단)`, 1);
 }
 function placeEnemies(cfg) {
@@ -6609,7 +6665,7 @@ function renderNick() {
 // ---------- 협동전 방 (멀티플레이 서버) ----------
 const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 (한 판은 최대 12명)
 // 게임 버전: 파일을 고칠 때마다 올림. 같은 방 사람끼리 버전이 다르면 방 화면에 표시
-const GAME_VER = 'v1.2.23';
+const GAME_VER = 'v1.2.24';
 document.querySelectorAll('[data-ver]').forEach(el => { el.textContent = GAME_VER; });
 // 협동전 보상 비율 (인원 1~12명). 인원이 늘수록 늘어나는 폭도 커짐
 const COOP_BONUS = [0, 0.30, 0.35, 0.42, 0.50, 0.60, 0.72, 0.85, 1.00, 1.18, 1.38, 1.60, 1.85];
@@ -6720,19 +6776,22 @@ function makeMate(id) {
   const bandW = std('#ece8dc', { roughness:0.95 });
   const bandL = dpart(armL, BOX, bandW, [0.15, 0.16, 0.15], [0, -0.42, 0]); bandL.visible = false;
   const rollR = dpart(armR, SPH, bandW, [0.07, 0.07, 0.07], [0, -0.64, -0.03]); rollR.visible = false;
-  const mt = { id, g, body, tag, party, lz, ld, beam, hips, thighL, thighR, shinL, shinR, torso, neck, armL, armR, gun, bandL, rollR,
+  const penR = dpart(armR, BOX, std('#d6c23a', { roughness:0.5 }), [0.05, 0.2, 0.05], [0, -0.68, -0.02]); penR.visible = false;   // 회복 주사기
+  const mt = { id, g, body, tag, party, lz, ld, beam, hips, thighL, thighR, shinL, shinR, torso, neck, armL, armR, gun, bandL, rollR, penR, injT:-1,
     ph:0, mv:0, fs:0, ss:0, kick:0, throwT:0, lx:0, lz0:0, tx:0, ty:0, tz:0, yaw:0, pitch:0, flags:0, seen:false, down:false };
   g.userData.mate = mt; g.visible = false;
   scene.add(g); MATES.set(id, mt);
   return mt;
 }
 // 팀원 동작: 걷기/달리기/옆걸음/뒷걸음, 앉아 걷기, 조준, 사격 반동, 재장전, 수류탄 던지기, 쓰러져 기어가기, 무릎 꿇고 살리기
-// flags: 1 앉기, 2 쓰러짐, 4 레이저, 8 라이트, 16 달리기, 32 재장전, 64 조준, 128 살리는 중, 256 엎드림, 512 치료 중
+// flags: 1 앉기, 2 쓰러짐, 4 레이저, 8 라이트, 16 달리기, 32 재장전, 64 조준, 128 살리는 중, 256 엎드림, 512 붕대 치료 중, 1024 주사 치료 중
 function animateMate(mt, dt) {
   const g = mt.g, f = mt.flags, q = 1 - Math.exp(-16 * dt);
   const L = (o, k, v) => { o[k] += (v - o[k]) * q; };
   const down = mt.down, proneF = !!(f & 256) && !down, crouchF = !!(f & 1) && !down && !proneF, run = !!(f & 16) && !down && !crouchF && !proneF, reload = !!(f & 32), aim = !!(f & 64), rev = !!(f & 128) && !down, heal = !!(f & 512) && !down;
   mt.bandL.visible = mt.rollR.visible = heal;
+  const inj = !!(f & 1024) && !down; if (inj) mt.injT = (mt.injT < 0 ? 0 : mt.injT) + dt; else mt.injT = -1;
+  mt.penR.visible = inj;
   // 화면에 그려진 위치 변화로 이동 속도와 방향(앞뒤, 옆)을 구함
   const vx = (g.position.x - mt.lx) / Math.max(dt, 1e-3), vz = (g.position.z - mt.lz0) / Math.max(dt, 1e-3); mt.lx = g.position.x; mt.lz0 = g.position.z;
   const sy = Math.sin(g.rotation.y), cy = Math.cos(g.rotation.y), a8 = Math.min(1, dt * 8);
@@ -6779,18 +6838,20 @@ function animateMate(mt, dt) {
     if (reload) { aL = 0.45 + Math.sin(performance.now() / 110) * 0.25; aLz = 0.35; gunX = -0.35; }
     // 치료: 총을 내려 옆으로 돌리고, 왼팔을 가슴 앞에 가로로 든 채 오른손으로 그 둘레에 붕대를 감음
     if (heal) { const w = performance.now() / 1000 * 9; aL = 1.35; aLz = 0.75; aR = 1.15 + Math.sin(w) * 0.32; aRz = -0.15 + Math.cos(w) * 0.3; gunY = 0.2; gunX = -1.1; }
+    // 주사: 총을 내리고 오른손을 들었다가 왼쪽 허벅지로 내리꽂음
+    if (inj) { const t = mt.injT; aR = t < 0.3 ? 0.9 : t < 0.45 ? 0.9 - (t - 0.3) / 0.15 * 0.95 : -0.05; aRz = 0.35; gunY = 0.24; gunX = -0.9; }   // 꽂은 채로 회복
     aL -= mt.kick * 0.3; aR -= mt.kick * 0.3; gunZ = mt.kick * 0.07;
   }
   L(mt.hips.position, 'y', hipY); L(mt.torso.rotation, 'x', torsoX);
   L(mt.thighL.rotation, 'x', tL); L(mt.thighR.rotation, 'x', tR); L(mt.thighL.rotation, 'z', tLz); L(mt.thighR.rotation, 'z', tRz);
   L(mt.shinL.rotation, 'x', sL); L(mt.shinR.rotation, 'x', sR);
-  L(mt.armL.rotation, 'x', aL); L(mt.armL.rotation, 'z', aLz); if (!heal) L(mt.armR.rotation, 'z', aRz); else mt.armR.rotation.z = aRz;
+  L(mt.armL.rotation, 'x', aL); L(mt.armL.rotation, 'z', aLz); if (!heal && !inj) L(mt.armR.rotation, 'z', aRz); else mt.armR.rotation.z = aRz;
   if (mt.throwT > 0 && !down) {
     // 수류탄 던지기: 오른팔을 머리 뒤로 젖혔다가 앞으로 휘두름
     const p2 = 1 - mt.throwT / 0.6;
     mt.armR.rotation.x = p2 < 0.45 ? 0.8 + (3.6 - 0.8) * (p2 / 0.45) : 3.6 + (1.0 - 3.6) * ((p2 - 0.45) / 0.55);
     mt.armR.rotation.z = -0.15; mt.gun.visible = false;
-  } else if (heal) mt.armR.rotation.x = aR;
+  } else if (heal || inj) mt.armR.rotation.x = aR;
   else L(mt.armR.rotation, 'x', aR);
   L(mt.gun.position, 'y', gunY); L(mt.gun.rotation, 'x', gunX); L(mt.gun.position, 'z', gunZ0 + gunZ); L(mt.gun.rotation, 'z', reload ? 0.5 : 0);
   // 조준하면 고개를 총 쪽(오른쪽 아래)으로 숙여 개머리판에 뺨을 댐
@@ -7018,7 +7079,7 @@ function updateNet(dt) {
   if (netSendT <= 0) {
     netSendT = 1 / 15;
     const f = (crouch ? 1 : 0) | (P.downed ? 2 : 0) | (laserActive() && !(WEAPONS[weapon].scope && aimT > 0.85) ? 4 : 0) | (lightActive() ? 8 : 0)
-      | (P.sprinting ? 16 : 0) | (reloading > 0 ? 32 : 0) | (aimT > 0.5 ? 64 : 0) | (reviveWho && reviveT > 0 ? 128 : 0) | (prone ? 256 : 0) | (healing ? 512 : 0);
+      | (P.sprinting ? 16 : 0) | (reloading > 0 ? 32 : 0) | (aimT > 0.5 ? 64 : 0) | (reviveWho && reviveT > 0 ? 128 : 0) | (prone ? 256 : 0) | (healing && healMode === 'wrap' ? 512 : 0) | (healing && healMode === 'inject' ? 1024 : 0);
     netSend({ t:'s', p:[+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.yaw.toFixed(2), +P.pitch.toFixed(2), f, weapon, Math.round(P.hp)] });
   }
   // 적에게 준 피해를 모아서 AI 담당자에게 (1초에 최대 20번)
@@ -7073,7 +7134,8 @@ function netEvent(m) {
   else if (m.k === 'door') { const v = VAULTS[m.d | 0]; if (v && !v.open) { setVaultState(v, true); SND.play('clear', 0.4); } }
   else if (m.k === 'loot') netDropRecv(m.d);
   else if (m.k === 'throw' && mt) mt.throwT = 0.6;
-  else if ((m.k === 'wrap' || m.k === 'tear') && mt && mt.g.visible) {
+  else if (m.k === 'injstart' && mt) mt.injT = 0;
+  else if ((m.k === 'wrap' || m.k === 'tear' || m.k === 'inject') && mt && mt.g.visible) {
     const d = mt.g.position.distanceTo(P.pos), v = clamp(1 - d / 22, 0, 1);
     if (v > 0.03) SND.play(m.k, v * 0.9);
   }
