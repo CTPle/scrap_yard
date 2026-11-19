@@ -6668,7 +6668,7 @@ const NET_URL = 'wss://ctple.onrender.com', MAX_ROOM = 6; // 파티 최대 6명 
 const GAME_VER = 'v1.2.24.2';
 // ---------- 실행 기록 (일반 모드) ----------
 // 게임을 켤 때와 창을 닫을 때 한 번씩만 서버에 알림 (계속 연결하지 않음). 협동전 접속은 서버 연결로 따로 기록됨
-// 닉네임이 없으면 이 기기의 무작위 번호로 기록. 깃허브 페이지에서 실행할 때만 보냄
+// 닉네임이 없으면 서버에 '익명의 유저'로 기록됨. 깃허브 페이지에서 실행할 때만 보냄
 const SESS = { t0:Date.now(), raids:0, ended:false, dev:(() => {
   try { let d = localStorage.getItem('scrapyard-dev'); if (!/^[0-9a-f]{6}$/.test(d || '')) { d = Array.from({ length:6 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''); localStorage.setItem('scrapyard-dev', d); } return d; } catch (_) { return ''; }
 })() };

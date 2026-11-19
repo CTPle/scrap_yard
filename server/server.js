@@ -379,7 +379,7 @@ function onlineList() {
 // ---------- HTTP 와 WebSocket ----------
 // ---------- 일반 모드 실행 기록 ----------
 // 일반 모드는 서버에 계속 연결하지 않음. 게임을 켤 때(start), 창을 닫을 때(end) 한 번씩만 /hit 으로 알려 옴
-// 닉네임이 없으면 기기 번호(무작위 6자리)로 남김. 같은 곳에서 1분에 6번 넘게 오면 무시
+// 닉네임이 없으면 '익명의 유저'로 남김. 같은 곳에서 1분에 6번 넘게 오면 무시
 const hitLog = new Map();
 setInterval(() => { const now = Date.now(); for (const [ip, a] of hitLog) if (!a.some(t => now - t < 60000)) hitLog.delete(ip); }, 10 * 60 * 1000);
 function onHit(req, res) {
@@ -393,7 +393,7 @@ function onHit(req, res) {
   times.push(now); hitLog.set(ip, times);
   const q = new URL(req.url, 'http://x').searchParams;
   const nick = q.get('nick') || '', dev = q.get('dev') || '', ver = (q.get('ver') || '').slice(0, 20).replace(/[^\w.]/g, '');
-  const who = NICK_RE.test(nick) ? nick : /^[0-9a-f]{6}$/.test(dev) ? `닉네임 없음(기기 ${dev})` : '';
+  const who = NICK_RE.test(nick) ? nick : /^[0-9a-f]{6}$/.test(dev) ? '익명의 유저' : '';
   if (!who) return done();
   const num = (k, max) => Math.min(max, Math.max(0, parseInt(q.get(k), 10) || 0));
   if (q.get('ev') === 'start') logLine(`실행  ${who}  ${ver}  (일반 모드)`);
